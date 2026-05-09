@@ -36,7 +36,7 @@ const Login = () => {
                     <span style={styles.icon}>🛍️</span>
                 </div>
 
-                <h1 style={styles.titulo}>WhiteBlack</h1>
+                <h1 style={styles.titulo}>SADA FLOW</h1>
                 <p style={styles.subtitulo}>Bienvenido, inicia sesión</p>
 
                 <form onSubmit={handleLogin} style={styles.form}>

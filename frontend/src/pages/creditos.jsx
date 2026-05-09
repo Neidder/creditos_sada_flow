@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
-import { getPlanes, crearPlan, cancelarPlan } from '../api/creditos';
+import { getCreditos, crearCredito, cancelarCredito } from '../api/creditos';
 import { getClientes } from '../api/clientes';
 import { getProductos } from '../api/productos';
 
@@ -13,13 +13,12 @@ const ESTADOS = {
 
 const itemVacio = () => ({ id_producto: '', talla: '', cantidad: 1, precio_unitario: '' });
 
-const PlanesSepare = () => {
-    const [planes, setPlanes] = useState([]);
+const Creditos = () => {
+    const [creditos, setCreditos] = useState([]);
     const [clientes, setClientes] = useState([]);
     const [productos, setProductos] = useState([]);
     const [mostrarForm, setMostrarForm] = useState(false);
     const [idCliente, setIdCliente] = useState('');
-    const [anticipo, setAnticipo] = useState('');
     const [fechaFin, setFechaFin] = useState('');
     const [items, setItems] = useState([itemVacio()]);
     const [error, setError] = useState('');
@@ -35,10 +34,10 @@ const PlanesSepare = () => {
     const cargarTodo = async () => {
         setCargando(true);
         try {
-            const [pl, cl, pr] = await Promise.all([
-                getPlanes(), getClientes(), getProductos()
+            const [cr, cl, pr] = await Promise.all([
+                getCreditos(), getClientes(), getProductos()
             ]);
-            setPlanes(pl);
+            setCreditos(cr);
             setClientes(cl);
             setProductos(pr);
         } catch {
@@ -48,7 +47,6 @@ const PlanesSepare = () => {
         }
     };
 
-    // Tallas disponibles del producto seleccionado
     const tallasDeProducto = (idProducto) => {
         if (!idProducto) return [];
         const prod = productos.find(p => p.id_producto === parseInt(idProducto));
@@ -58,7 +56,6 @@ const PlanesSepare = () => {
     const handleItemChange = (index, campo, valor) => {
         const nuevos = [...items];
         nuevos[index][campo] = valor;
-        // Si cambia el producto resetear talla y autocompletar precio
         if (campo === 'id_producto') {
             nuevos[index].talla = '';
             const prod = productos.find(p => p.id_producto === parseInt(valor));
@@ -78,28 +75,21 @@ const PlanesSepare = () => {
     );
 
     const handleGuardar = async () => {
-        if (!idCliente || !anticipo || !fechaFin) {
-            setError('Cliente, anticipo y fecha límite son obligatorios');
+        if (!idCliente || !fechaFin) {
+            setError('Cliente y fecha límite son obligatorios');
             return;
         }
-        const itemsValidos = items.filter(i => i.id_producto && i.talla && i.cantidad > 0 && i.precio_unitario > 0);
+        const itemsValidos = items.filter(
+            i => i.id_producto && i.talla && i.cantidad > 0 && i.precio_unitario > 0
+        );
         if (itemsValidos.length === 0) {
             setError('Agrega al menos un producto con talla, cantidad y precio');
             return;
         }
-        if (parseFloat(anticipo) < 0) {
-            setError('El anticipo no puede ser negativo');
-            return;
-        }
-        if (parseFloat(anticipo) > calcularTotal()) {
-            setError('El anticipo no puede ser mayor al valor total');
-            return;
-        }
         try {
-            await crearPlan({
+            await crearCredito({
                 id_cliente: parseInt(idCliente),
                 id_vendedor: usuario?.id_usuario || usuario?.id,
-                anticipo: parseFloat(anticipo),
                 fecha_fin: fechaFin,
                 detalles: itemsValidos.map(i => ({
                     id_producto: parseInt(i.id_producto),
@@ -109,19 +99,20 @@ const PlanesSepare = () => {
                 }))
             });
             setMostrarForm(false);
-            setIdCliente(''); setAnticipo(''); setFechaFin('');
+            setIdCliente('');
+            setFechaFin('');
             setItems([itemVacio()]);
             setError('');
             cargarTodo();
         } catch (err) {
-            setError(err.response?.data?.error || 'Error al crear el plan');
+            setError(err.response?.data?.error || 'Error al crear el crédito');
         }
     };
 
     const handleCancelar = async (id) => {
-        if (!confirm('¿Seguro que quieres cancelar este plan?')) return;
+        if (!confirm('¿Seguro que quieres cancelar este crédito?')) return;
         try {
-            await cancelarPlan(id);
+            await cancelarCredito(id);
             cargarTodo();
         } catch (err) {
             setError(err.response?.data?.error || 'Error al cancelar');
@@ -138,22 +129,23 @@ const PlanesSepare = () => {
         return p ? p.nombre : `Producto #${id}`;
     };
 
-    const esVencido = (plan) => plan.estado === 'activo' && new Date(plan.fecha_fin) < new Date();
-    const getEstado = (plan) => esVencido(plan) ? 'vencido' : plan.estado;
+    const esVencido = (c) =>
+        c.estado === 'activo' && new Date(c.fecha_fin) < new Date();
+    const getEstado = (c) => esVencido(c) ? 'vencido' : c.estado;
 
-    const planesFiltrados = planes.filter(p => {
-        const estado = getEstado(p);
+    const creditosFiltrados = creditos.filter(c => {
+        const estado = getEstado(c);
         const matchFiltro = filtro === 'todos' || estado === filtro;
-        const nombre = getNombreCliente(p.id_cliente).toLowerCase();
+        const nombre = getNombreCliente(c.id_cliente).toLowerCase();
         const matchBusqueda = !busqueda || nombre.includes(busqueda.toLowerCase());
         return matchFiltro && matchBusqueda;
     });
 
     const resumen = {
-        activos: planes.filter(p => getEstado(p) === 'activo').length,
-        vencidos: planes.filter(p => getEstado(p) === 'vencido').length,
-        pagados: planes.filter(p => p.estado === 'pagado').length,
-        saldo: planes.reduce((s, p) => s + parseFloat(p.saldo_restante || 0), 0),
+        activos: creditos.filter(c => getEstado(c) === 'activo').length,
+        vencidos: creditos.filter(c => getEstado(c) === 'vencido').length,
+        pagados: creditos.filter(c => c.estado === 'pagado').length,
+        saldo: creditos.reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0),
     };
 
     return (
@@ -163,11 +155,11 @@ const PlanesSepare = () => {
 
                 <div style={styles.header}>
                     <div>
-                        <h1 style={styles.titulo}>📋 Planes Separe</h1>
-                        <p style={styles.subtitulo}>{planes.length} planes registrados</p>
+                        <h1 style={styles.titulo}>📋 Créditos</h1>
+                        <p style={styles.subtitulo}>{creditos.length} créditos registrados</p>
                     </div>
                     <button onClick={() => { setMostrarForm(true); setError(''); }} style={styles.botonNuevo}>
-                        + Nuevo Plan
+                        + Nuevo Crédito
                     </button>
                 </div>
 
@@ -215,9 +207,7 @@ const PlanesSepare = () => {
                 {/* Formulario */}
                 {mostrarForm && (
                     <div style={styles.formulario}>
-                        <h3 style={styles.formTitulo}>➕ Nuevo Plan Separe</h3>
-
-                        {/* Cliente y fecha */}
+                        <h3 style={styles.formTitulo}>➕ Nuevo Crédito</h3>
                         <div style={styles.formGrid}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Cliente *</label>
@@ -231,19 +221,23 @@ const PlanesSepare = () => {
                                 </select>
                             </div>
                             <div style={styles.inputGroup}>
-                                <label style={styles.label}>Fecha límite de pago *</label>
-                                <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} style={styles.input} />
+                                <label style={styles.label}>Fecha límite *</label>
+                                <input
+                                    type="date"
+                                    value={fechaFin}
+                                    onChange={e => setFechaFin(e.target.value)}
+                                    style={styles.input}
+                                />
                             </div>
                         </div>
 
                         {/* Productos */}
                         <div style={styles.productosSeccion}>
-                            <p style={styles.seccionTitulo}>👕 Productos del separe</p>
+                            <p style={styles.seccionTitulo}>👕 Productos del crédito</p>
                             {items.map((item, i) => {
                                 const tallas = tallasDeProducto(item.id_producto);
                                 return (
                                     <div key={i} style={styles.itemRow}>
-                                        {/* Producto */}
                                         <div style={{ flex: 2 }}>
                                             <label style={styles.labelSmall}>Producto</label>
                                             <select
@@ -259,8 +253,6 @@ const PlanesSepare = () => {
                                                 ))}
                                             </select>
                                         </div>
-
-                                        {/* Talla */}
                                         <div style={{ flex: 1 }}>
                                             <label style={styles.labelSmall}>Talla</label>
                                             <select
@@ -277,8 +269,6 @@ const PlanesSepare = () => {
                                                 ))}
                                             </select>
                                         </div>
-
-                                        {/* Cantidad */}
                                         <div style={{ flex: 1 }}>
                                             <label style={styles.labelSmall}>Cantidad</label>
                                             <input
@@ -288,8 +278,6 @@ const PlanesSepare = () => {
                                                 style={styles.input}
                                             />
                                         </div>
-
-                                        {/* Precio */}
                                         <div style={{ flex: 1 }}>
                                             <label style={styles.labelSmall}>Precio</label>
                                             <input
@@ -299,15 +287,12 @@ const PlanesSepare = () => {
                                                 style={styles.input}
                                             />
                                         </div>
-
-                                        {/* Subtotal */}
                                         <div style={{ flex: 1 }}>
                                             <label style={styles.labelSmall}>Subtotal</label>
                                             <div style={styles.subtotalBox}>
                                                 ${((parseFloat(item.precio_unitario) || 0) * (parseInt(item.cantidad) || 0)).toLocaleString()}
                                             </div>
                                         </div>
-
                                         <button onClick={() => quitarItem(i)} style={styles.botonQuitar}>✕</button>
                                     </div>
                                 );
@@ -317,74 +302,57 @@ const PlanesSepare = () => {
                             </button>
                         </div>
 
-                        {/* Total y anticipo */}
-                        <div style={styles.totalSection}>
-                            <div style={styles.totalBox}>
-                                <span style={styles.totalLabel}>TOTAL</span>
-                                <span style={styles.totalValor}>${calcularTotal().toLocaleString()}</span>
-                            </div>
-                            <div style={styles.anticipoGroup}>
-                                <label style={styles.label}>Anticipo *</label>
-                                <input
-                                    type="number" min="0"
-                                    placeholder="Ej: 50000"
-                                    value={anticipo}
-                                    onChange={e => setAnticipo(e.target.value)}
-                                    style={styles.input}
-                                />
-                                <p style={styles.saldoTexto}>
-                                    Saldo restante: <strong>${(calcularTotal() - (parseFloat(anticipo) || 0)).toLocaleString()}</strong>
-                                </p>
-                            </div>
+                        <div style={styles.totalBox}>
+                            <span style={styles.totalLabel}>TOTAL</span>
+                            <span style={styles.totalValor}>${calcularTotal().toLocaleString()}</span>
                         </div>
 
                         <div style={styles.formBotones}>
-                            <button onClick={handleGuardar} style={styles.botonGuardar}>💾 Crear Plan</button>
+                            <button onClick={handleGuardar} style={styles.botonGuardar}>💾 Crear Crédito</button>
                             <button onClick={() => { setMostrarForm(false); setItems([itemVacio()]); }} style={styles.botonCancelar}>Cancelar</button>
                         </div>
                     </div>
                 )}
 
-                {/* Lista de planes */}
+                {/* Lista */}
                 {cargando ? (
-                    <div style={styles.sinDatos}>Cargando planes...</div>
-                ) : planesFiltrados.length === 0 ? (
+                    <div style={styles.sinDatos}>Cargando créditos...</div>
+                ) : creditosFiltrados.length === 0 ? (
                     <div style={styles.sinDatos}>
                         <p style={{ fontSize: '40px', margin: 0 }}>📋</p>
-                        <p>No hay planes {filtro !== 'todos' ? filtro + 's' : 'registrados'}</p>
+                        <p>No hay créditos {filtro !== 'todos' ? filtro + 's' : 'registrados'}</p>
                     </div>
                 ) : (
                     <div style={styles.lista}>
-                        {planesFiltrados.map((plan) => {
-                            const estado = getEstado(plan);
+                        {creditosFiltrados.map((credito) => {
+                            const estado = getEstado(credito);
                             const cfg = ESTADOS[estado] || ESTADOS.activo;
-                            const porcentaje = plan.valor_total > 0
-                                ? ((plan.valor_total - plan.saldo_restante) / plan.valor_total) * 100
+                            const porcentaje = credito.valor_total > 0
+                                ? ((credito.valor_total - credito.saldo_pendiente) / credito.valor_total) * 100
                                 : 0;
 
                             return (
-                                <div key={plan.id_plan_separe} style={styles.planCard}>
-                                    <div style={styles.planFila}>
-                                        <div style={styles.planInfo}>
-                                            <div style={styles.planTop}>
-                                                <span style={styles.planId}>Plan #{plan.id_plan_separe}</span>
+                                <div key={credito.id_credito} style={styles.creditoCard}>
+                                    <div style={styles.creditoFila}>
+                                        <div style={styles.creditoInfo}>
+                                            <div style={styles.creditoTop}>
+                                                <span style={styles.creditoId}>Crédito #{credito.id_credito}</span>
                                                 <span style={{ ...styles.badge, backgroundColor: cfg.bg, color: cfg.color }}>
                                                     {cfg.label}
                                                 </span>
                                             </div>
-                                            <p style={styles.planCliente}>👤 {getNombreCliente(plan.id_cliente)}</p>
-                                            <p style={styles.planFecha}>
-                                                📅 Vence: {plan.fecha_fin
-                                                    ? new Date(plan.fecha_fin + 'T00:00:00').toLocaleDateString('es-CO')
+                                            <p style={styles.creditoCliente}>👤 {getNombreCliente(credito.id_cliente)}</p>
+                                            <p style={styles.creditoFecha}>
+                                                📅 Vence: {credito.fecha_limite
+                                                    ? new Date(credito.fecha_limite + 'T00:00:00').toLocaleDateString('es-CO')
                                                     : '—'}
                                             </p>
                                         </div>
 
-                                        <div style={styles.planFinanzas}>
+                                        <div style={styles.creditoFinanzas}>
                                             {[
-                                                { label: 'Total', valor: `$${Number(plan.valor_total).toLocaleString()}`, color: '#2d2d2d' },
-                                                { label: 'Anticipo', valor: `$${Number(plan.anticipo).toLocaleString()}`, color: '#2e7d52' },
-                                                { label: 'Saldo', valor: `$${Number(plan.saldo_restante).toLocaleString()}`, color: plan.saldo_restante > 0 ? '#e65100' : '#2e7d52' },
+                                                { label: 'Total', valor: `$${Number(credito.valor_total).toLocaleString()}`, color: '#2d2d2d' },
+                                                { label: 'Saldo', valor: `$${Number(credito.saldo_pendiente).toLocaleString()}`, color: credito.saldo_pendiente > 0 ? '#e65100' : '#2e7d52' },
                                             ].map(({ label, valor, color }) => (
                                                 <div key={label} style={styles.finanzaItem}>
                                                     <span style={styles.finanzaLabel}>{label}</span>
@@ -395,14 +363,14 @@ const PlanesSepare = () => {
 
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             <button
-                                                onClick={() => setExpandido(expandido === plan.id_plan_separe ? null : plan.id_plan_separe)}
+                                                onClick={() => setExpandido(expandido === credito.id_credito ? null : credito.id_credito)}
                                                 style={styles.botonVerProductos}
                                             >
-                                                {expandido === plan.id_plan_separe ? '▲ Ocultar' : '▼ Ver productos'}
+                                                {expandido === credito.id_credito ? '▲ Ocultar' : '▼ Ver productos'}
                                             </button>
                                             {estado === 'activo' && (
-                                                <button onClick={() => handleCancelar(plan.id_plan_separe)} style={styles.botonCancelarPlan}>
-                                                    Cancelar plan
+                                                <button onClick={() => handleCancelar(credito.id_credito)} style={styles.botonCancelarCredito}>
+                                                    Cancelar crédito
                                                 </button>
                                             )}
                                         </div>
@@ -420,12 +388,12 @@ const PlanesSepare = () => {
                                         <span style={styles.progressLabel}>{porcentaje.toFixed(0)}% pagado</span>
                                     </div>
 
-                                    {/* Productos del plan expandidos */}
-                                    {expandido === plan.id_plan_separe && (
+                                    {/* Productos expandidos */}
+                                    {expandido === credito.id_credito && (
                                         <div style={styles.productosExpandidos}>
-                                            <p style={styles.productosExpandidosTitulo}>👕 Productos del plan</p>
-                                            {plan.detalles && plan.detalles.length > 0 ? (
-                                                <table style={styles.tablaProductos}>
+                                            <p style={styles.productosExpandidosTitulo}>👕 Productos del crédito</p>
+                                            {credito.detalles && credito.detalles.length > 0 ? (
+                                                <table style={styles.tabla}>
                                                     <thead>
                                                         <tr style={{ backgroundColor: '#f0f4f0' }}>
                                                             <th style={styles.th}>Producto</th>
@@ -436,7 +404,7 @@ const PlanesSepare = () => {
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {plan.detalles.map(d => (
+                                                        {credito.detalles.map(d => (
                                                             <tr key={d.id_detalle} style={{ borderTop: '1px solid #f0f4f0' }}>
                                                                 <td style={styles.td}>{getNombreProducto(d.id_producto)}</td>
                                                                 <td style={styles.td}>
@@ -452,7 +420,7 @@ const PlanesSepare = () => {
                                                     </tbody>
                                                 </table>
                                             ) : (
-                                                <p style={{ color: '#999', fontSize: '13px' }}>Sin productos registrados</p>
+                                                <p style={{ color: '#999', fontSize: '13px' }}>Sin productos</p>
                                             )}
                                         </div>
                                     )}
@@ -497,41 +465,38 @@ const styles = {
     subtotalBox: { padding: '10px 14px', backgroundColor: '#f0f4f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', color: '#2e7d52' },
     botonQuitar: { backgroundColor: '#fdecea', color: '#e53935', border: 'none', width: '32px', height: '32px', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 },
     botonAgregar: { backgroundColor: 'transparent', color: '#2e7d52', border: '1.5px dashed #2e7d52', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', marginTop: '4px' },
-    totalSection: { display: 'flex', gap: '20px', alignItems: 'flex-start', marginBottom: '20px' },
-    totalBox: { flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '15px 20px', borderRadius: '10px' },
+    totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '15px 20px', borderRadius: '10px', marginBottom: '20px' },
     totalLabel: { fontSize: '14px', fontWeight: '700', color: '#2e7d52' },
     totalValor: { fontSize: '22px', fontWeight: 'bold', color: '#2e7d52' },
-    anticipoGroup: { flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' },
-    saldoTexto: { fontSize: '13px', color: '#e65100', margin: '4px 0 0 0' },
     formBotones: { display: 'flex', gap: '10px' },
     botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
     botonCancelar: { backgroundColor: 'white', color: '#666', border: '1px solid #ddd', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer' },
     lista: { display: 'flex', flexDirection: 'column', gap: '12px' },
-    planCard: { backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', overflow: 'hidden' },
-    planFila: { display: 'flex', alignItems: 'center', gap: '20px', padding: '18px 20px' },
-    planInfo: { flex: 2 },
-    planTop: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' },
-    planId: { fontSize: '15px', fontWeight: 'bold', color: '#2d2d2d' },
+    creditoCard: { backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', overflow: 'hidden' },
+    creditoFila: { display: 'flex', alignItems: 'center', gap: '20px', padding: '18px 20px' },
+    creditoInfo: { flex: 2 },
+    creditoTop: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' },
+    creditoId: { fontSize: '15px', fontWeight: 'bold', color: '#2d2d2d' },
     badge: { padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
-    planCliente: { fontSize: '14px', color: '#333', margin: '2px 0' },
-    planFecha: { fontSize: '12px', color: '#999', margin: '2px 0' },
-    planFinanzas: { display: 'flex', gap: '20px', flex: 1 },
+    creditoCliente: { fontSize: '14px', color: '#333', margin: '2px 0' },
+    creditoFecha: { fontSize: '12px', color: '#999', margin: '2px 0' },
+    creditoFinanzas: { display: 'flex', gap: '20px', flex: 1 },
     finanzaItem: { display: 'flex', flexDirection: 'column', alignItems: 'center' },
     finanzaLabel: { fontSize: '11px', color: '#999' },
     finanzaValor: { fontSize: '15px', fontWeight: 'bold' },
     botonVerProductos: { backgroundColor: '#f0f4f0', color: '#555', border: 'none', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
-    botonCancelarPlan: { backgroundColor: '#fdecea', color: '#e53935', border: 'none', padding: '7px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+    botonCancelarCredito: { backgroundColor: '#fdecea', color: '#e53935', border: 'none', padding: '7px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
     progressContainer: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderTop: '1px solid #f0f4f0', backgroundColor: '#fafffe' },
     progressBar: { flex: 1, height: '8px', backgroundColor: '#e0ede6', borderRadius: '4px', overflow: 'hidden' },
     progressFill: { height: '100%', borderRadius: '4px', transition: 'width 0.3s ease' },
     progressLabel: { fontSize: '12px', color: '#666', minWidth: '70px', textAlign: 'right' },
     productosExpandidos: { borderTop: '1px solid #f0f4f0', padding: '15px 20px', backgroundColor: '#fafffe' },
     productosExpandidosTitulo: { fontSize: '13px', fontWeight: '700', color: '#2e7d52', margin: '0 0 12px 0' },
-    tablaProductos: { width: '100%', borderCollapse: 'collapse' },
+    tabla: { width: '100%', borderCollapse: 'collapse' },
     th: { padding: '10px 14px', textAlign: 'left', fontSize: '12px', color: '#555', fontWeight: '600' },
     td: { padding: '10px 14px', fontSize: '13px', color: '#333' },
     tallaPill: { backgroundColor: '#e8f5ee', color: '#2e7d52', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' },
     sinDatos: { backgroundColor: 'white', borderRadius: '12px', padding: '50px', textAlign: 'center', color: '#999' },
 };
 
-export default PlanesSepare;
+export default Creditos;

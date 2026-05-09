@@ -5,7 +5,7 @@ import Productos from './pages/Productos';
 import Clientes from './pages/Clientes';
 import Proveedores from './pages/Proveedores';
 import Compras from './pages/Compras';
-import PlanesSepare from './pages/PlanesSepare';
+import Creditos from './pages/Creditos';
 import Pagos from './pages/Pagos';
 import Ventas from './pages/Ventas';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -21,7 +21,7 @@ function App() {
                 <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
                 <Route path="/proveedores" element={<ProtectedRoute><Proveedores /></ProtectedRoute>} />
                 <Route path="/compras" element={<ProtectedRoute><Compras /></ProtectedRoute>} />
-                <Route path="/planes-separe" element={<ProtectedRoute><PlanesSepare /></ProtectedRoute>} />
+                <Route path="/creditos" element={<ProtectedRoute><Creditos /></ProtectedRoute>} />
                 <Route path="/pagos" element={<ProtectedRoute><Pagos /></ProtectedRoute>} />
                 <Route path="/ventas" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
             </Routes>

@@ -1,16 +1,16 @@
 import api from './axios';
 
-export const getPlanes = async () => {
-    const response = await api.get('/planes-separe/planes/');
+export const getCreditos = async () => {
+    const response = await api.get('/creditos/creditos/');
     return response.data;
 };
 
-export const crearPlan = async (data) => {
-    const response = await api.post('/planes-separe/planes/', data);
+export const crearCredito = async (data) => {
+    const response = await api.post('/creditos/creditos/', data);
     return response.data;
 };
 
-export const cancelarPlan = async (id) => {
-    const response = await api.delete(`/planes-separe/planes/${id}/`);
+export const cancelarCredito = async (id) => {
+    const response = await api.delete(`/creditos/creditos/${id}/`);
     return response.data;
 };
