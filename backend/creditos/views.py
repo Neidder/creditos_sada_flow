@@ -82,7 +82,7 @@ class CreditoViewSet(viewsets.ModelViewSet):
             id_cliente=cliente,
             id_vendedor=vendedor,
             valor_total=valor_total,
-            saldo_restante=valor_total,
+            saldo_pendiente=valor_total,
             fecha_inicio=timezone.now().date(),
             fecha_fin=data['fecha_fin'],
             estado='activo',
@@ -137,7 +137,7 @@ class CreditoViewSet(viewsets.ModelViewSet):
         return Response({
             'mensaje': 'Crédito creado correctamente',
             'id_credito': credito.id_credito,
-            'saldo_restante': credito.saldo_restante
+            'saldo_pendiente': credito.saldo_pendiente
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'])

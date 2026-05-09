@@ -24,10 +24,10 @@ class Creditos(models.Model):
     )
 
     valor_total = models.DecimalField(max_digits=10, decimal_places=2)
-    saldo_restante = models.DecimalField(max_digits=10, decimal_places=2)
+    saldo_pendiente = models.DecimalField(max_digits=10, decimal_places=2)
 
-    fecha_inicio = models.DateField(blank=True, null=True)
-    fecha_fin = models.DateField(blank=True, null=True)
+    fecha_credito = models.DateField(blank=True, null=True)
+    fecha_limite = models.DateField(blank=True, null=True)
 
     estado = models.CharField(max_length=50, blank=True, null=True)
 

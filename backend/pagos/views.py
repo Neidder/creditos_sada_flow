@@ -56,15 +56,15 @@ class PagoViewSet(viewsets.ModelViewSet):
             registrado_por=usuario
         )
 
-        credito.saldo_restante -= data['monto']
+        credito.saldo_pendiente -= data['monto']
 
-        if credito.saldo_restante <= 0:
-            credito.saldo_restante = 0
+        if credito.saldo_pendiente <= 0:
+            credito.saldo_pendiente = 0
             credito.estado = 'pagado'
 
         credito.save()
 
         return Response({
             'mensaje': 'Pago registrado correctamente',
-            'saldo_restante': credito.saldo_restante
+            'saldo_pendiente': credito.saldo_pendiente
         })
