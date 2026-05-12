@@ -83,8 +83,8 @@ class CreditoViewSet(viewsets.ModelViewSet):
             id_vendedor=vendedor,
             valor_total=valor_total,
             saldo_pendiente=valor_total,
-            fecha_inicio=timezone.now().date(),
-            fecha_fin=data['fecha_fin'],
+            fecha_credito=timezone.now().date(),
+            fecha_limite=data['fecha_fin'],
             estado='activo',
             fecha_creacion=timezone.now()
         )

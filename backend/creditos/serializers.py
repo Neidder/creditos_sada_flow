@@ -28,7 +28,7 @@ class CrearCreditoSerializer(serializers.Serializer):
 
     id_vendedor = serializers.IntegerField()
 
-    fecha_fin = serializers.DateField()
+    fecha_limite = serializers.DateField()
 
     detalles = CrearDetalleCreditoSerializer(many=True)
 

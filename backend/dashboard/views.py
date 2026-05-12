@@ -194,7 +194,7 @@ def resumen_dashboard(request):
 
         'ultimas_compras': ultimas_compras,
 
-        'ultimos_pagos': ultimos_pagos,
+        'ultimos_pagos': ultimos_pagos, 
 
         'pagos_por_metodo': metodos,
     })
