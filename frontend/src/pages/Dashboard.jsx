@@ -75,7 +75,7 @@ const Dashboard = () => {
                         { icon: '👥', label: 'Clientes', valor: data.generales.clientes, color: '#1565c0', bg: '#e3f2fd' },
                         { icon: '👕', label: 'Productos', valor: data.generales.productos, color: '#6a1b9a', bg: '#f3e5f5' },
                         { icon: '🏭', label: 'Proveedores', valor: data.generales.proveedores, color: '#e65100', bg: '#fff3e0' },
-                        { icon: '📋', label: 'Planes activos', valor: data.generales.planes_activos, color: '#2e7d52', bg: '#e8f5ee' },
+                        { icon: '📋', label: 'Créditos activos', valor: data.generales.creditos_activos, color: '#2e7d52', bg: '#e8f5ee' },
                     ].map(({ icon, label, valor, color, bg }) => (
                         <div key={label} style={{ ...styles.card, borderTop: `4px solid ${color}` }}>
                             <div style={{ ...styles.cardIcono, backgroundColor: bg, color }}>
@@ -96,7 +96,7 @@ const Dashboard = () => {
                         { label: 'Recaudado este mes', valor: data.finanzas.recaudado_mes, color: '#2e7d52', icon: '📈' },
                         { label: 'Compras este mes', valor: data.finanzas.compras_mes, color: '#e53935', icon: '📉' },
                         { label: 'Saldo pendiente', valor: data.finanzas.saldo_pendiente, color: '#e65100', icon: '⏳' },
-                        { label: 'Planes vencidos', valor: data.finanzas.planes_vencidos, color: '#e53935', icon: '⚠️', esCantidad: true },
+                        { label: 'Créditos vencidos', valor: data.finanzas.creditos_vencidos, color: '#e53935', icon: '⚠️', esCantidad: true },
                     ].map(({ label, valor, color, icon, esCantidad }) => (
                         <div key={label} style={styles.finanzaCard}>
                             <div style={styles.finanzaTop}>

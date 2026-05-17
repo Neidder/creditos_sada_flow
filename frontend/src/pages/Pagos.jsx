@@ -90,7 +90,7 @@ const Pagos = () => {
 
     // Solo créditos activos con saldo
     const creditosConSaldo = creditos.filter(c =>
-        c.estado === 'activo' && parseFloat(c.saldo_pendiente) > 0
+        c.estado === 'PENDIENTE' && parseFloat(c.saldo_pendiente) > 0
     );
 
     const pagosFiltrados = pagos.filter(p => {
@@ -105,7 +105,7 @@ const Pagos = () => {
         new Date(p.fecha_pago).toDateString() === new Date().toDateString()
     ).reduce((s, p) => s + parseFloat(p.monto || 0), 0);
     const creditosPendientes = creditos.filter(c =>
-        c.estado === 'activo' && parseFloat(c.saldo_pendiente) > 0
+        c.estado === 'PENDIENTE' && parseFloat(c.saldo_pendiente) > 0
     ).length;
 
     return (
@@ -223,8 +223,8 @@ const Pagos = () => {
                                         </span>
                                         <span style={styles.infoLabel}>Vence:</span>
                                         <span style={styles.infoValor}>
-                                            {creditoSeleccionado.fecha_fin
-                                                ? new Date(creditoSeleccionado.fecha_fin + 'T00:00:00').toLocaleDateString('es-CO')
+                                            {creditoSeleccionado.fecha_limite
+                                                ? new Date(creditoSeleccionado.fecha_limite + 'T00:00:00').toLocaleDateString('es-CO')
                                                 : '—'}
                                         </span>
                                     </div>

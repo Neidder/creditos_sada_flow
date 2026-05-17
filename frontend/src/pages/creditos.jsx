@@ -5,10 +5,9 @@ import { getClientes } from '../api/clientes';
 import { getProductos } from '../api/productos';
 
 const ESTADOS = {
-    activo:    { color: '#1565c0', bg: '#e3f2fd', label: 'Activo' },
-    pagado:    { color: '#2e7d52', bg: '#e8f5ee', label: 'Pagado' },
-    cancelado: { color: '#e53935', bg: '#fdecea', label: 'Cancelado' },
-    vencido:   { color: '#e65100', bg: '#fff3e0', label: 'Vencido' },
+    PENDIENTE: { color: '#1565c0', bg: '#e3f2fd', label: 'Pendiente' },
+    PAGADO:    { color: '#2e7d52', bg: '#e8f5ee', label: 'Pagado' },
+    VENCIDO:   { color: '#e65100', bg: '#fff3e0', label: 'Vencido' },
 };
 
 const itemVacio = () => ({ id_producto: '', talla: '', cantidad: 1, precio_unitario: '' });
@@ -90,7 +89,7 @@ const Creditos = () => {
             await crearCredito({
                 id_cliente: parseInt(idCliente),
                 id_vendedor: usuario?.id_usuario || usuario?.id,
-                fecha_fin: fechaFin,
+                fecha_limite: fechaFin,
                 detalles: itemsValidos.map(i => ({
                     id_producto: parseInt(i.id_producto),
                     talla: i.talla,
@@ -130,23 +129,23 @@ const Creditos = () => {
     };
 
     const esVencido = (c) =>
-        c.estado === 'activo' && new Date(c.fecha_fin) < new Date();
-    const getEstado = (c) => esVencido(c) ? 'vencido' : c.estado;
+        c.estado === 'PENDIENTE' && new Date(c.fecha_limite) < new Date();
+    const getEstado = (c) => esVencido(c) ? 'VENCIDO' : c.estado;
 
-    const creditosFiltrados = creditos.filter(c => {
-        const estado = getEstado(c);
-        const matchFiltro = filtro === 'todos' || estado === filtro;
-        const nombre = getNombreCliente(c.id_cliente).toLowerCase();
-        const matchBusqueda = !busqueda || nombre.includes(busqueda.toLowerCase());
-        return matchFiltro && matchBusqueda;
-    });
+const creditosFiltrados = creditos.filter(c => {
+    const estado = getEstado(c);
+    const matchFiltro = filtro === 'todos' || estado === filtro;
+    const nombre = getNombreCliente(c.id_cliente).toLowerCase();
+    const matchBusqueda = !busqueda || nombre.includes(busqueda.toLowerCase());
+    return matchFiltro && matchBusqueda;
+});
 
-    const resumen = {
-        activos: creditos.filter(c => getEstado(c) === 'activo').length,
-        vencidos: creditos.filter(c => getEstado(c) === 'vencido').length,
-        pagados: creditos.filter(c => c.estado === 'pagado').length,
-        saldo: creditos.reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0),
-    };
+const resumen = {
+    activos:  creditos.filter(c => c.estado === 'PENDIENTE' && !esVencido(c)).length,
+    vencidos: creditos.filter(c => esVencido(c)).length,
+    pagados:  creditos.filter(c => c.estado === 'PAGADO').length,
+    saldo:    creditos.reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0),
+};
 
     return (
         <div style={styles.layout}>
@@ -188,17 +187,19 @@ const Creditos = () => {
                             onChange={e => setBusqueda(e.target.value)}
                             style={styles.buscador}
                         />
-                    </div>
-                    <div style={styles.filtrosBotones}>
-                        {['todos', 'activo', 'vencido', 'pagado', 'cancelado'].map(f => (
-                            <button key={f} onClick={() => setFiltro(f)} style={{
-                                ...styles.filtroBton,
-                                backgroundColor: filtro === f ? '#2e7d52' : 'white',
-                                color: filtro === f ? 'white' : '#555',
-                            }}>
-                                {f.charAt(0).toUpperCase() + f.slice(1)}
-                            </button>
-                        ))}
+                            </div>
+                            <div style={styles.filtrosBotones}>
+                            {['todos', 'PENDIENTE', 'VENCIDO', 'PAGADO'].map(f => (
+            <button key={f} onClick={() => setFiltro(f)} style={{
+                ...styles.filtroBton,
+                backgroundColor: filtro === f ? '#2e7d52' : 'white',
+                color: filtro === f ? 'white' : '#555',
+            }}>
+                {f === 'todos' ? 'Todos' :
+                f === 'PENDIENTE' ? 'Pendiente' :
+                f === 'VENCIDO' ? 'Vencido' : 'Pagado'}
+            </button>
+        ))}
                     </div>
                 </div>
 
@@ -326,7 +327,7 @@ const Creditos = () => {
                     <div style={styles.lista}>
                         {creditosFiltrados.map((credito) => {
                             const estado = getEstado(credito);
-                            const cfg = ESTADOS[estado] || ESTADOS.activo;
+                            const cfg = ESTADOS[estado] || ESTADOS['PENDIENTE']; 
                             const porcentaje = credito.valor_total > 0
                                 ? ((credito.valor_total - credito.saldo_pendiente) / credito.valor_total) * 100
                                 : 0;
@@ -368,7 +369,7 @@ const Creditos = () => {
                                             >
                                                 {expandido === credito.id_credito ? '▲ Ocultar' : '▼ Ver productos'}
                                             </button>
-                                            {estado === 'activo' && (
+                                            {estado === 'PENDIENTE' && (
                                                 <button onClick={() => handleCancelar(credito.id_credito)} style={styles.botonCancelarCredito}>
                                                     Cancelar crédito
                                                 </button>
