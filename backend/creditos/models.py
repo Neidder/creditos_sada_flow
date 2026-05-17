@@ -14,7 +14,6 @@ class Creditos(models.Model):
         blank=True,
         null=True
     )
-
     id_vendedor = models.ForeignKey(
         Usuarios,
         models.DO_NOTHING,
@@ -25,12 +24,10 @@ class Creditos(models.Model):
 
     valor_total = models.DecimalField(max_digits=10, decimal_places=2)
     saldo_pendiente = models.DecimalField(max_digits=10, decimal_places=2)
-
-    fecha_credito = models.DateField(blank=True, null=True)
-    fecha_limite = models.DateField(blank=True, null=True)
-
+    fecha_credito = models.DateField(blank=True, null=True)    # era fecha_inicio
+    fecha_limite = models.DateField(blank=True, null=True)     # era fecha_fin
     estado = models.CharField(max_length=50, blank=True, null=True)
-
+    observaciones = models.TextField(blank=True, null=True)
     fecha_creacion = models.DateTimeField(blank=True, null=True)
 
     class Meta:
@@ -47,7 +44,6 @@ class DetalleCredito(models.Model):
         db_column='id_credito',
         related_name='detalles'
     )
-
     id_producto = models.ForeignKey(
         Productos,
         models.DO_NOTHING,
@@ -55,13 +51,9 @@ class DetalleCredito(models.Model):
         null=True,
         blank=True
     )
-
     talla = models.CharField(max_length=10)
-
     cantidad = models.IntegerField(default=1)
-
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
-
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:

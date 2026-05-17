@@ -41,17 +41,17 @@ def resumen_dashboard(request):
     # ─────────────────────────────
 
     creditos_activos = Creditos.objects.filter(
-        estado='activo'
+        estado='PENDIENTE'
     ).count()
 
     creditos_vencidos = Creditos.objects.filter(
-        estado='activo',
-        fecha_fin__lt=hoy.date()
+        estado='PENDIENTE',
+        fecha_limite__lt=hoy.date()
     ).count()
 
     saldo_pendiente = sum(
         float(c.saldo_pendiente or 0)
-        for c in Creditos.objects.filter(estado='activo')
+        for c in Creditos.objects.filter(estado='PENDIENTE')
     )
 
     # ─────────────────────────────
@@ -167,34 +167,20 @@ def resumen_dashboard(request):
         )
 
     return Response({
-
         'generales': {
-
             'clientes': total_clientes,
-
             'productos': total_productos,
-
             'proveedores': total_proveedores,
-
-            'creditos_activos': creditos_activos,
+            'creditos_activos': creditos_activos,  # ← era planes_activos
         },
-
         'finanzas': {
-
             'recaudado_mes': total_recaudado_mes,
-
             'compras_mes': total_compras_mes,
-
             'saldo_pendiente': saldo_pendiente,
-
-            'creditos_vencidos': creditos_vencidos,
+            'creditos_vencidos': creditos_vencidos,  # ← era planes_vencidos
         },
-
         'productos_stock_bajo': list(productos_stock_bajo),
-
         'ultimas_compras': ultimas_compras,
-
-        'ultimos_pagos': ultimos_pagos, 
-
+        'ultimos_pagos': ultimos_pagos,
         'pagos_por_metodo': metodos,
     })
