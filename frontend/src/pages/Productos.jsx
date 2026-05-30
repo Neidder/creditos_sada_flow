@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import {
     getProductos, crearProducto,
     actualizarProducto, eliminarProducto
 } from '../api/productos';
 
-// ── Tipos de talla disponibles ──
 const TIPOS_TALLA = {
     ropa: {
         label: '👕 Ropa',
@@ -50,11 +49,67 @@ const detectarTipo = (tallasProducto) => {
     return 'ropa';
 };
 
+// ── Modal reutilizable ──
+const Modal = ({ isOpen, onClose, children }) => {
+    const overlayRef = useRef(null);
+
+    useEffect(() => {
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        if (isOpen) {
+            document.addEventListener('keydown', handleKey);
+            document.body.style.overflow = 'hidden';
+        }
+        return () => {
+            document.removeEventListener('keydown', handleKey);
+            document.body.style.overflow = '';
+        };
+    }, [isOpen, onClose]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div
+            ref={overlayRef}
+            onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+            style={modalStyles.overlay}
+        >
+            <div style={modalStyles.container}>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+const modalStyles = {
+    overlay: {
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px',
+    },
+    container: {
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        boxShadow: '0 25px 60px rgba(0,0,0,0.18)',
+        width: '100%',
+        maxWidth: '640px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        animation: 'modalIn 0.2s ease',
+    },
+};
+
 const Productos = () => {
     const [productos, setProductos] = useState([]);
-    const [mostrarForm, setMostrarForm] = useState(false);
+    const [modalAbierto, setModalAbierto] = useState(false);
     const [productoEditando, setProductoEditando] = useState(null);
     const [error, setError] = useState('');
+    const [errorModal, setErrorModal] = useState('');
     const [form, setForm] = useState(formInicial);
     const [tallas, setTallas] = useState(tallasIniciales('ropa'));
     const [tipoTalla, setTipoTalla] = useState('ropa');
@@ -108,8 +163,8 @@ const Productos = () => {
         setForm(formInicial);
         setTipoTalla('ropa');
         setTallas(tallasIniciales('ropa'));
-        setMostrarForm(true);
-        setError('');
+        setErrorModal('');
+        setModalAbierto(true);
     };
 
     const handleEditar = (producto) => {
@@ -121,64 +176,55 @@ const Productos = () => {
             costo_promedio: producto.costo_promedio || '',
             stock: producto.stock.toString(),
         });
-
         const tipo = detectarTipo(producto.tallas);
         setTipoTalla(tipo);
-
         const tallasEdit = TIPOS_TALLA[tipo].tallas.map(t => {
             const encontrada = producto.tallas?.find(pt => pt.talla === t);
-            return {
-                talla: t,
-                cantidad: encontrada ? encontrada.cantidad : 0,
-                activa: !!encontrada,
-            };
+            return { talla: t, cantidad: encontrada ? encontrada.cantidad : 0, activa: !!encontrada };
         });
         setTallas(tallasEdit);
-        setMostrarForm(true);
-        setError('');
+        setErrorModal('');
+        setModalAbierto(true);
+    };
+
+    const handleCerrarModal = () => {
+        setModalAbierto(false);
+        setErrorModal('');
     };
 
     const handleGuardar = async () => {
         if (!form.nombre || !form.precio_venta) {
-            setError('Nombre y precio de venta son obligatorios');
+            setErrorModal('Nombre y precio de venta son obligatorios');
             return;
         }
-
-        // ── Validación: precio_venta no puede ser menor al costo_promedio ──
         const precioVenta = parseFloat(form.precio_venta);
         const costoPromedio = parseFloat(form.costo_promedio);
         if (form.costo_promedio && !isNaN(costoPromedio) && precioVenta < costoPromedio) {
-            setError(
+            setErrorModal(
                 `⚠️ El precio de venta ($${precioVenta.toLocaleString()}) no puede ser inferior al costo promedio ($${costoPromedio.toLocaleString()}). Estarías vendiendo a pérdida.`
             );
             return;
         }
-
-        const tallasActivas = tallas
-            .filter(t => t.activa)
-            .map(t => ({ talla: t.talla, cantidad: t.cantidad }));
-
+        const tallasActivas = tallas.filter(t => t.activa).map(t => ({ talla: t.talla, cantidad: t.cantidad }));
         if (tallasActivas.length === 0) {
-            setError('Debes seleccionar al menos una talla');
+            setErrorModal('Debes seleccionar al menos una talla');
             return;
         }
-
         const payload = { ...form, tallas: tallasActivas };
-
         try {
             if (productoEditando) {
                 await actualizarProducto(productoEditando.id_producto, payload);
             } else {
                 await crearProducto(payload);
             }
-            setMostrarForm(false);
+            setModalAbierto(false);
             cargarProductos();
             setError('');
         } catch (err) {
             const msg = err.response?.data?.error
                 || err.response?.data?.precio_venta?.[0]
                 || 'Error al guardar el producto';
-            setError(msg);
+            setErrorModal(msg);
         }
     };
 
@@ -192,23 +238,29 @@ const Productos = () => {
         }
     };
 
-    // Alerta visual si precio_venta < costo_promedio durante edición
+    // Alertas en tiempo real dentro del modal
     const precioVentaNum = parseFloat(form.precio_venta);
     const costoPromedioNum = parseFloat(form.costo_promedio);
     const hayAlertaPrecio =
-        form.precio_venta &&
-        form.costo_promedio &&
-        !isNaN(precioVentaNum) &&
-        !isNaN(costoPromedioNum) &&
+        form.precio_venta && form.costo_promedio &&
+        !isNaN(precioVentaNum) && !isNaN(costoPromedioNum) &&
         precioVentaNum < costoPromedioNum;
 
     const margenGanancia =
-        form.precio_venta && form.costo_promedio && !isNaN(precioVentaNum) && !isNaN(costoPromedioNum) && costoPromedioNum > 0
+        form.precio_venta && form.costo_promedio &&
+        !isNaN(precioVentaNum) && !isNaN(costoPromedioNum) && costoPromedioNum > 0
             ? (((precioVentaNum - costoPromedioNum) / costoPromedioNum) * 100).toFixed(1)
             : null;
 
     return (
         <div style={styles.layout}>
+            <style>{`
+                @keyframes modalIn {
+                    from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+            `}</style>
+
             <Sidebar />
             <div style={styles.contenido}>
 
@@ -225,41 +277,62 @@ const Productos = () => {
 
                 {error && <p style={styles.error}>{error}</p>}
 
-                {/* Formulario */}
-                {mostrarForm && (
-                    <div style={styles.formulario}>
-                        <h3 style={styles.formTitulo}>
-                            {productoEditando ? '✏️ Editar Producto' : '➕ Nuevo Producto'}
-                        </h3>
+                {/* ── Modal crear / editar ── */}
+                <Modal isOpen={modalAbierto} onClose={handleCerrarModal}>
+                    <div style={styles.modalHeader}>
+                        <div>
+                            <div style={styles.modalIconRow}>
+                                <div style={styles.modalIconCircle}>
+                                    <span style={{ fontSize: '20px' }}>
+                                        {productoEditando ? '✏️' : '👕'}
+                                    </span>
+                                </div>
+                                <h2 style={styles.modalTitulo}>
+                                    {productoEditando ? 'Editar Producto' : 'Nuevo Producto'}
+                                </h2>
+                            </div>
+                            <p style={styles.modalSubtitulo}>
+                                {productoEditando
+                                    ? `Modificando "${productoEditando.nombre}"`
+                                    : 'Completa los datos del nuevo producto'}
+                            </p>
+                        </div>
+                        <button onClick={handleCerrarModal} style={styles.botonCerrar}>✕</button>
+                    </div>
 
-                        {/* Nota informativa para productos nuevos */}
+                    <div style={styles.modalBody}>
+                        {errorModal && (
+                            <div style={styles.errorModal}>
+                                <span>⚠️</span> {errorModal}
+                            </div>
+                        )}
+
+                        {/* Nota para productos nuevos */}
                         {!productoEditando && (
                             <div style={styles.notaInfo}>
-                                ℹ️ Al crear el producto, la <strong>cantidad</strong> y el <strong>costo promedio</strong> se establecen al registrar la primera <strong>Compra</strong>. El precio de venta puedes ingresarlo ahora.
+                                ℹ️ La <strong>cantidad</strong> y el <strong>costo promedio</strong> se establecen al registrar la primera <strong>Compra</strong>.
                             </div>
                         )}
 
                         {/* Datos básicos */}
                         <div style={styles.formGrid}>
-                            <div style={styles.inputGroup}>
-                                <label style={styles.label}>Nombre *</label>
+                            <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
+                                <label style={styles.label}>Nombre <span style={styles.requerido}>*</span></label>
                                 <input
                                     name="nombre"
                                     placeholder="Ej: Pantalón Levis"
                                     value={form.nombre}
                                     onChange={handleChange}
                                     style={styles.input}
+                                    autoFocus
                                 />
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>
-                                    Precio de Venta *
-                                    {hayAlertaPrecio && (
-                                        <span style={styles.alertaLabel}> ⚠️ Menor al costo</span>
-                                    )}
+                                    Precio de Venta <span style={styles.requerido}>*</span>
                                     {margenGanancia !== null && !hayAlertaPrecio && (
-                                        <span style={{ ...styles.margenLabel, color: parseFloat(margenGanancia) >= 0 ? '#2e7d52' : '#e53935' }}>
-                                            &nbsp;({margenGanancia >= 0 ? '+' : ''}{margenGanancia}% margen)
+                                        <span style={{ color: parseFloat(margenGanancia) >= 0 ? '#2e7d52' : '#e53935', fontSize: '12px', fontWeight: '600', marginLeft: '6px' }}>
+                                            ({margenGanancia >= 0 ? '+' : ''}{margenGanancia}% margen)
                                         </span>
                                     )}
                                 </label>
@@ -273,7 +346,7 @@ const Productos = () => {
                                     style={{
                                         ...styles.input,
                                         borderColor: hayAlertaPrecio ? '#e53935' : '#e0ede6',
-                                        backgroundColor: hayAlertaPrecio ? '#fff5f5' : 'white',
+                                        backgroundColor: hayAlertaPrecio ? '#fff5f5' : '#fafffe',
                                     }}
                                 />
                             </div>
@@ -297,7 +370,7 @@ const Productos = () => {
                                     style={{ ...styles.input, backgroundColor: '#f0f4f0', color: '#2e7d52', fontWeight: 'bold' }}
                                 />
                             </div>
-                            <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
+                            <div style={styles.inputGroup}>
                                 <label style={styles.label}>Descripción</label>
                                 <input
                                     name="descripcion"
@@ -309,16 +382,16 @@ const Productos = () => {
                             </div>
                         </div>
 
-                        {/* Alerta de precio menor al costo */}
+                        {/* Alerta precio < costo */}
                         {hayAlertaPrecio && (
                             <div style={styles.alertaPrecio}>
-                                ⚠️ <strong>Atención:</strong> El precio de venta (${precioVentaNum.toLocaleString()}) es menor al costo promedio (${costoPromedioNum.toLocaleString()}). Esto generaría una pérdida de ${(costoPromedioNum - precioVentaNum).toLocaleString()} por unidad vendida.
+                                ⚠️ <strong>Atención:</strong> El precio de venta (${precioVentaNum.toLocaleString()}) es menor al costo promedio (${costoPromedioNum.toLocaleString()}). Pérdida de ${(costoPromedioNum - precioVentaNum).toLocaleString()} por unidad.
                             </div>
                         )}
 
-                        {/* Selector tipo de talla */}
+                        {/* Tipo de talla */}
                         <div style={styles.tipoTallaSeccion}>
-                            <p style={styles.tipoTallaTitulo}>📐 Tipo de talla</p>
+                            <p style={styles.seccionTitulo}>📐 Tipo de talla</p>
                             <div style={styles.tipoTallaGrid}>
                                 {Object.entries(TIPOS_TALLA).map(([key, cfg]) => (
                                     <div
@@ -337,14 +410,14 @@ const Productos = () => {
                             </div>
                         </div>
 
-                        {/* Sección de tallas */}
+                        {/* Tallas */}
                         <div style={styles.tallasSeccion}>
-                            <p style={styles.tallastitulo}>
+                            <p style={styles.seccionTitulo}>
                                 👗 Tallas disponibles
                                 <span style={styles.tallasHint}>
                                     {productoEditando
                                         ? ' — Marca las tallas activas'
-                                        : ' — Selecciona las tallas del producto (cantidades se llenarán con compras)'}
+                                        : ' — Las cantidades se llenarán con compras'}
                                 </span>
                             </p>
                             <div style={styles.tallasGrid}>
@@ -356,13 +429,8 @@ const Productos = () => {
                                             ...(t.activa ? styles.tallaCardActiva : {})
                                         }}
                                     >
-                                        <div
-                                            style={styles.tallaHeader}
-                                            onClick={() => handleTallaToggle(i)}
-                                        >
-                                            <span style={styles.tallaCheck}>
-                                                {t.activa ? '✅' : '⬜'}
-                                            </span>
+                                        <div style={styles.tallaHeader} onClick={() => handleTallaToggle(i)}>
+                                            <span style={styles.tallaCheck}>{t.activa ? '✅' : '⬜'}</span>
                                             <span style={styles.tallaNombre}>{t.talla}</span>
                                         </div>
                                         {t.activa && productoEditando && (
@@ -382,23 +450,20 @@ const Productos = () => {
                                 ))}
                             </div>
                         </div>
-
-                        <div style={styles.formBotones}>
-                            <button
-                                onClick={handleGuardar}
-                                style={{
-                                    ...styles.botonGuardar,
-                                    opacity: hayAlertaPrecio ? 0.7 : 1,
-                                }}
-                            >
-                                💾 Guardar Producto
-                            </button>
-                            <button onClick={() => setMostrarForm(false)} style={styles.botonCancelar}>
-                                Cancelar
-                            </button>
-                        </div>
                     </div>
-                )}
+
+                    <div style={styles.modalFooter}>
+                        <button onClick={handleCerrarModal} style={styles.botonCancelar}>
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleGuardar}
+                            style={{ ...styles.botonGuardar, opacity: hayAlertaPrecio ? 0.7 : 1 }}
+                        >
+                            {productoEditando ? '💾 Guardar cambios' : '✅ Crear Producto'}
+                        </button>
+                    </div>
+                </Modal>
 
                 {/* Lista de productos */}
                 <div style={styles.listaContainer}>
@@ -428,19 +493,12 @@ const Productos = () => {
                                                     {p.activo ? 'Activo' : 'Inactivo'}
                                                 </span>
                                                 {enPerdida && (
-                                                    <span style={styles.badgePerdida}>
-                                                        ⚠️ Venta a pérdida
-                                                    </span>
+                                                    <span style={styles.badgePerdida}>⚠️ Venta a pérdida</span>
                                                 )}
                                             </div>
-                                            {p.descripcion && (
-                                                <p style={styles.productoDesc}>{p.descripcion}</p>
-                                            )}
+                                            {p.descripcion && <p style={styles.productoDesc}>{p.descripcion}</p>}
                                             <div style={styles.productoPrecios}>
-                                                <span style={{
-                                                    ...styles.precioVenta,
-                                                    color: enPerdida ? '#e53935' : '#2e7d52'
-                                                }}>
+                                                <span style={{ ...styles.precioVenta, color: enPerdida ? '#e53935' : '#2e7d52' }}>
                                                     💰 Venta: ${Number(p.precio_venta).toLocaleString()}
                                                 </span>
                                                 <span style={styles.precioCosto}>
@@ -477,7 +535,6 @@ const Productos = () => {
                                         </div>
                                     </div>
 
-                                    {/* Tallas expandidas */}
                                     {expandido === p.id_producto && (
                                         <div style={styles.tallasExpandidas}>
                                             {p.tallas && p.tallas.length > 0 ? (
@@ -509,7 +566,6 @@ const Productos = () => {
                         })
                     )}
                 </div>
-
             </div>
         </div>
     );
@@ -524,42 +580,47 @@ const styles = {
     botonNuevo: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' },
     error: { color: '#e53935', backgroundColor: '#fdecea', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
 
-    formulario: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 2px 15px rgba(0,0,0,0.06)' },
-    formTitulo: { color: '#2e7d52', marginBottom: '16px', marginTop: 0 },
+    // Modal interior
+    modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '24px 28px 0 28px' },
+    modalIconRow: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' },
+    modalIconCircle: { width: '42px', height: '42px', borderRadius: '12px', backgroundColor: '#e8f5ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    modalTitulo: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
+    modalSubtitulo: { fontSize: '13px', color: '#888', margin: '2px 0 0 54px' },
+    botonCerrar: { background: 'none', border: 'none', fontSize: '18px', color: '#aaa', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', lineHeight: 1, flexShrink: 0 },
 
-    notaInfo: { backgroundColor: '#e3f2fd', border: '1px solid #90caf9', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#1565c0', marginBottom: '20px' },
+    modalBody: { padding: '20px 28px' },
+    errorModal: { display: 'flex', gap: '8px', alignItems: 'center', color: '#e53935', backgroundColor: '#fdecea', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' },
+    notaInfo: { backgroundColor: '#e3f2fd', border: '1px solid #90caf9', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#1565c0', marginBottom: '16px' },
     alertaPrecio: { backgroundColor: '#fff3e0', border: '1.5px solid #ff9800', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#e65100', marginBottom: '16px' },
-    alertaLabel: { color: '#e53935', fontSize: '12px', fontWeight: '600' },
-    margenLabel: { fontSize: '12px', fontWeight: '600' },
 
-    formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '16px' },
-    inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+    formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' },
+    inputGroup: { display: 'flex', flexDirection: 'column', gap: '5px' },
     label: { fontSize: '13px', color: '#555', fontWeight: '600' },
-    input: { padding: '10px 14px', border: '1.5px solid #e0ede6', borderRadius: '8px', fontSize: '14px', outline: 'none' },
-    formBotones: { display: 'flex', gap: '10px', marginTop: '20px' },
-    botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
-    botonCancelar: { backgroundColor: 'white', color: '#666', border: '1px solid #ddd', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer' },
+    requerido: { color: '#e53935' },
+    input: { padding: '10px 14px', border: '1.5px solid #e0ede6', borderRadius: '8px', fontSize: '14px', outline: 'none', backgroundColor: '#fafffe' },
 
-    // Tipo de talla
-    tipoTallaSeccion: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '16px', marginBottom: '16px' },
-    tipoTallaTitulo: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', margin: '0 0 12px 0' },
-    tipoTallaGrid: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
-    tipoTallaCard: { flex: 1, minWidth: '140px', border: '2px solid #e0ede6', borderRadius: '10px', padding: '12px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s' },
-    tipoTallaLabel: { fontSize: '13px', fontWeight: '700', color: '#2d2d2d' },
-    tipoTallaDesc: { fontSize: '11px', color: '#888' },
+    seccionTitulo: { fontSize: '13px', fontWeight: '700', color: '#2e7d52', margin: '0 0 12px 0' },
 
-    // Tallas
-    tallasSeccion: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '18px' },
-    tallastitulo: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', marginBottom: '15px', marginTop: 0 },
-    tallasHint: { fontSize: '12px', color: '#999', fontWeight: '400' },
-    tallasGrid: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-    tallaCard: { border: '2px solid #e0ede6', borderRadius: '10px', padding: '12px', minWidth: '80px', cursor: 'pointer', backgroundColor: 'white', transition: 'all 0.2s' },
+    tipoTallaSeccion: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '14px', marginBottom: '14px' },
+    tipoTallaGrid: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+    tipoTallaCard: { flex: 1, minWidth: '120px', border: '2px solid #e0ede6', borderRadius: '10px', padding: '10px 12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '3px', transition: 'all 0.15s' },
+    tipoTallaLabel: { fontSize: '12px', fontWeight: '700', color: '#2d2d2d' },
+    tipoTallaDesc: { fontSize: '10px', color: '#888' },
+
+    tallasSeccion: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '14px' },
+    tallasHint: { fontSize: '11px', color: '#999', fontWeight: '400' },
+    tallasGrid: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
+    tallaCard: { border: '2px solid #e0ede6', borderRadius: '10px', padding: '10px', minWidth: '72px', cursor: 'pointer', backgroundColor: 'white', transition: 'all 0.15s' },
     tallaCardActiva: { border: '2px solid #2e7d52', backgroundColor: '#f0faf4' },
-    tallaHeader: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' },
-    tallaCheck: { fontSize: '14px' },
-    tallaNombre: { fontWeight: 'bold', fontSize: '15px', color: '#333' },
-    tallaCantidad: { width: '100%', padding: '6px 8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '14px', textAlign: 'center', outline: 'none' },
-    tallaNotaCompra: { fontSize: '11px', color: '#1565c0', fontStyle: 'italic', display: 'block', textAlign: 'center' },
+    tallaHeader: { display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '5px' },
+    tallaCheck: { fontSize: '13px' },
+    tallaNombre: { fontWeight: 'bold', fontSize: '14px', color: '#333' },
+    tallaCantidad: { width: '100%', padding: '5px 6px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', textAlign: 'center', outline: 'none' },
+    tallaNotaCompra: { fontSize: '10px', color: '#1565c0', fontStyle: 'italic', display: 'block', textAlign: 'center' },
+
+    modalFooter: { display: 'flex', gap: '10px', justifyContent: 'flex-end', padding: '16px 28px 24px 28px', borderTop: '1px solid #f0f0f0' },
+    botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 22px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' },
+    botonCancelar: { backgroundColor: 'white', color: '#666', border: '1.5px solid #ddd', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
 
     // Lista
     listaContainer: { display: 'flex', flexDirection: 'column', gap: '12px' },

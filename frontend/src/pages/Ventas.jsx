@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import { getVentas, crearVenta, getResumenVentas } from '../api/ventas';
 import { getProductos } from '../api/productos';
@@ -10,14 +10,70 @@ const STOCK_MINIMO = 3;
 
 const itemVacio = () => ({ id_producto: '', talla: '', cantidad: 1, precio_unitario: '' });
 
+/* ─── Modal ─── */
+const Modal = ({ isOpen, onClose, children }) => {
+    const overlayRef = useRef(null);
+
+    useEffect(() => {
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        if (isOpen) {
+            document.addEventListener('keydown', handleKey);
+            document.body.style.overflow = 'hidden';
+        }
+        return () => {
+            document.removeEventListener('keydown', handleKey);
+            document.body.style.overflow = '';
+        };
+    }, [isOpen, onClose]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div
+            ref={overlayRef}
+            onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+            style={modalStyles.overlay}
+        >
+            <div style={modalStyles.container}>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+const modalStyles = {
+    overlay: {
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px',
+    },
+    container: {
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        boxShadow: '0 25px 60px rgba(0,0,0,0.18)',
+        width: '100%',
+        maxWidth: '660px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        animation: 'modalIn 0.2s ease',
+    },
+};
+
 const Ventas = () => {
     const [ventas, setVentas] = useState([]);
     const [productos, setProductos] = useState([]);
     const [clientes, setClientes] = useState([]);
     const [resumen, setResumen] = useState(null);
-    const [mostrarForm, setMostrarForm] = useState(false);
+    const [modalAbierto, setModalAbierto] = useState(false);
     const [expandido, setExpandido] = useState(null);
     const [error, setError] = useState('');
+    const [errorModal, setErrorModal] = useState('');
     const [exito, setExito] = useState('');
     const [cargando, setCargando] = useState(false);
     const [filtroDia, setFiltroDia] = useState('hoy');
@@ -79,12 +135,26 @@ const Ventas = () => {
             s + (parseFloat(i.precio_unitario) || 0) * (parseInt(i.cantidad) || 0), 0
         );
 
+    /* ─── modal handlers ─── */
+    const handleNueva = () => {
+        setIdCliente('');
+        setMetodoPago('efectivo');
+        setItems([itemVacio()]);
+        setErrorModal('');
+        setModalAbierto(true);
+    };
+
+    const handleCerrarModal = () => {
+        setModalAbierto(false);
+        setErrorModal('');
+    };
+
     const handleGuardar = async () => {
         const itemsValidos = items.filter(
             i => i.id_producto && i.talla && i.cantidad > 0 && i.precio_unitario > 0
         );
         if (itemsValidos.length === 0) {
-            setError('Agrega al menos un producto con talla, cantidad y precio');
+            setErrorModal('Agrega al menos un producto con talla, cantidad y precio');
             return;
         }
         try {
@@ -100,7 +170,7 @@ const Ventas = () => {
                 }))
             });
             setExito(`✅ Venta #${res.id_venta} registrada — Total: $${Number(res.total).toLocaleString()}`);
-            setMostrarForm(false);
+            setModalAbierto(false);
             setIdCliente('');
             setMetodoPago('efectivo');
             setItems([itemVacio()]);
@@ -108,7 +178,7 @@ const Ventas = () => {
             cargarTodo();
             setTimeout(() => setExito(''), 5000);
         } catch (err) {
-            setError(err.response?.data?.error || 'Error al registrar la venta');
+            setErrorModal(err.response?.data?.error || 'Error al registrar la venta');
         }
     };
 
@@ -118,33 +188,35 @@ const Ventas = () => {
         return c ? `${c.nombre} ${c.apellido || ''}`.trim() : `Cliente #${id}`;
     };
 
-    // Filtro por día
     const ventasFiltradas = ventas.filter(v => {
         const fecha = new Date(v.fecha_venta);
         const hoy = new Date();
-        if (filtroDia === 'hoy') {
-            return fecha.toDateString() === hoy.toDateString();
-        }
+        if (filtroDia === 'hoy') return fecha.toDateString() === hoy.toDateString();
         if (filtroDia === 'semana') {
             const hace7 = new Date(hoy - 7 * 24 * 60 * 60 * 1000);
             return fecha >= hace7;
         }
         if (filtroDia === 'mes') {
-            return fecha.getMonth() === hoy.getMonth() &&
-                fecha.getFullYear() === hoy.getFullYear();
+            return fecha.getMonth() === hoy.getMonth() && fecha.getFullYear() === hoy.getFullYear();
         }
         return true;
     }).filter(v => {
         if (!busqueda) return true;
         const cliente = getNombreCliente(v.id_cliente).toLowerCase();
-        return cliente.includes(busqueda.toLowerCase()) ||
-            String(v.id_venta).includes(busqueda);
+        return cliente.includes(busqueda.toLowerCase()) || String(v.id_venta).includes(busqueda);
     });
 
     const totalFiltrado = ventasFiltradas.reduce((s, v) => s + parseFloat(v.total || 0), 0);
 
     return (
         <div style={styles.layout}>
+            <style>{`
+                @keyframes modalIn {
+                    from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+            `}</style>
+
             <Sidebar />
             <div style={styles.contenido}>
 
@@ -154,7 +226,7 @@ const Ventas = () => {
                         <h1 style={styles.titulo}>💵 Ventas</h1>
                         <p style={styles.subtitulo}>Control de ventas diarias</p>
                     </div>
-                    <button onClick={() => { setMostrarForm(true); setError(''); }} style={styles.botonNuevo}>
+                    <button onClick={handleNueva} style={styles.botonNuevo}>
                         + Registrar Venta
                     </button>
                 </div>
@@ -213,10 +285,29 @@ const Ventas = () => {
                 {exito && <p style={styles.exito}>{exito}</p>}
                 {error && <p style={styles.error}>{error}</p>}
 
-                {/* Formulario */}
-                {mostrarForm && (
-                    <div style={styles.formulario}>
-                        <h3 style={styles.formTitulo}>💵 Registrar Nueva Venta</h3>
+                {/* ─── MODAL ─── */}
+                <Modal isOpen={modalAbierto} onClose={handleCerrarModal}>
+                    {/* Header */}
+                    <div style={styles.modalHeader}>
+                        <div>
+                            <div style={styles.modalIconRow}>
+                                <div style={styles.modalIconCircle}>
+                                    <span style={{ fontSize: '20px' }}>💵</span>
+                                </div>
+                                <h2 style={styles.modalTitulo}>Nueva Venta</h2>
+                            </div>
+                            <p style={styles.modalSubtitulo}>Completa los datos de la venta</p>
+                        </div>
+                        <button onClick={handleCerrarModal} style={styles.botonCerrar}>✕</button>
+                    </div>
+
+                    {/* Body */}
+                    <div style={styles.modalBody}>
+                        {errorModal && (
+                            <div style={styles.errorModal}>
+                                <span>⚠️</span> {errorModal}
+                            </div>
+                        )}
 
                         <div style={styles.formGrid}>
                             <div style={styles.inputGroup}>
@@ -231,7 +322,7 @@ const Ventas = () => {
                                 </select>
                             </div>
                             <div style={styles.inputGroup}>
-                                <label style={styles.label}>Método de pago *</label>
+                                <label style={styles.label}>Método de pago <span style={styles.requerido}>*</span></label>
                                 <div style={styles.metodosRow}>
                                     {METODOS.map(m => (
                                         <button
@@ -289,7 +380,7 @@ const Ventas = () => {
                                             }} style={styles.botonQuitar}>✕</button>
                                         </div>
 
-                                        {/* Tallas del producto */}
+                                        {/* Tallas */}
                                         {prod && (
                                             <div style={styles.tallasGrid}>
                                                 {prod.tallas && prod.tallas.length > 0 ? (
@@ -338,7 +429,6 @@ const Ventas = () => {
                                             </div>
                                         )}
 
-                                        {/* Subtotal del item */}
                                         {item.talla && item.precio_unitario && (
                                             <div style={styles.itemResumen}>
                                                 <span>Talla <strong>{item.talla}</strong> × {item.cantidad} ud{item.cantidad > 1 ? 's' : ''}</span>
@@ -369,17 +459,18 @@ const Ventas = () => {
                             </div>
                             <span style={styles.totalValor}>${calcularTotal().toLocaleString()}</span>
                         </div>
-
-                        <div style={styles.formBotones}>
-                            <button onClick={handleGuardar} style={styles.botonGuardar}>
-                                💵 Confirmar Venta
-                            </button>
-                            <button onClick={() => { setMostrarForm(false); setItems([itemVacio()]); }} style={styles.botonCancelar}>
-                                Cancelar
-                            </button>
-                        </div>
                     </div>
-                )}
+
+                    {/* Footer */}
+                    <div style={styles.modalFooter}>
+                        <button onClick={handleCerrarModal} style={styles.botonCancelar}>
+                            Cancelar
+                        </button>
+                        <button onClick={handleGuardar} style={styles.botonGuardar}>
+                            💵 Confirmar Venta
+                        </button>
+                    </div>
+                </Modal>
 
                 {/* Lista de ventas */}
                 {cargando ? (
@@ -391,73 +482,111 @@ const Ventas = () => {
                     </div>
                 ) : (
                     <div style={styles.lista}>
-                        {ventasFiltradas.map(v => (
-                            <div key={v.id_venta} style={styles.ventaCard}>
-                                <div style={styles.ventaFila}>
-                                    <div style={styles.ventaMetodo}>
-                                        <span style={{ fontSize: '24px' }}>{METODO_ICONS[v.metodo_pago] || '💵'}</span>
-                                        <span style={styles.ventaMetodoLabel}>{v.metodo_pago}</span>
-                                    </div>
-                                    <div style={styles.ventaInfo}>
-                                        <p style={styles.ventaId}>Venta #{v.id_venta}</p>
-                                        <p style={styles.ventaCliente}>
-                                            👤 {getNombreCliente(v.id_cliente)}
-                                        </p>
-                                        <p style={styles.ventaFecha}>
-                                            📅 {v.fecha_venta
-                                                ? new Date(v.fecha_venta).toLocaleDateString('es-CO', {
-                                                    day: '2-digit', month: 'short',
-                                                    hour: '2-digit', minute: '2-digit'
-                                                }) : '—'}
-                                        </p>
-                                    </div>
-                                    <div style={styles.ventaTotal}>
-                                        ${Number(v.total).toLocaleString()}
-                                    </div>
-                                    <button
-                                        onClick={() => setExpandido(expandido === v.id_venta ? null : v.id_venta)}
-                                        style={styles.botonVer}
-                                    >
-                                        {expandido === v.id_venta ? '▲ Ocultar' : '▼ Detalle'}
-                                    </button>
-                                </div>
+                        {ventasFiltradas.map(v => {
+                            // NUEVO: Verificar si la venta tiene algún artículo devuelto en su historial
+                            const tieneDevolucion = v.detalles?.some(d => (d.cantidad_devuelta || 0) > 0);
 
-                                {/* Detalles expandidos */}
-                                {expandido === v.id_venta && v.detalles && (
-                                    <div style={styles.detallesContainer}>
-                                        <table style={styles.tabla}>
-                                            <thead>
-                                                <tr style={{ backgroundColor: '#f0f4f0' }}>
-                                                    <th style={styles.th}>Producto</th>
-                                                    <th style={styles.th}>Talla</th>
-                                                    <th style={styles.th}>Cantidad</th>
-                                                    <th style={styles.th}>Precio unit.</th>
-                                                    <th style={styles.th}>Subtotal</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {v.detalles.map(d => {
-                                                    const prod = productos.find(p => p.id_producto === d.id_producto);
-                                                    return (
-                                                        <tr key={d.id_detalle} style={{ borderTop: '1px solid #f0f4f0' }}>
-                                                            <td style={styles.td}>{prod?.nombre || `Producto #${d.id_producto}`}</td>
-                                                            <td style={styles.td}>
-                                                                <span style={styles.tallaPill}>{d.talla}</span>
-                                                            </td>
-                                                            <td style={styles.td}>{d.cantidad} uds</td>
-                                                            <td style={styles.td}>${Number(d.precio_unitario).toLocaleString()}</td>
-                                                            <td style={{ ...styles.td, color: '#2e7d52', fontWeight: 'bold' }}>
-                                                                ${Number(d.subtotal).toLocaleString()}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
+                            return (
+                                <div key={v.id_venta} style={styles.ventaCard}>
+                                    <div style={styles.ventaFila}>
+                                        <div style={styles.ventaMetodo}>
+                                            <span style={{ fontSize: '24px' }}>{METODO_ICONS[v.metodo_pago] || '💵'}</span>
+                                            <span style={styles.ventaMetodoLabel}>{v.metodo_pago}</span>
+                                        </div>
+                                        <div style={styles.ventaInfo}>
+                                            {/* SE MODIFICÓ AQUÍ: Alerta visual al lado del número de venta */}
+                                            <p style={styles.ventaId}>
+                                                Venta #{v.id_venta}
+                                                {tieneDevolucion && (
+                                                    <span style={styles.badgeVentaDevuelta}>🔄 Con Devolución</span>
+                                                )}
+                                            </p>
+                                            <p style={styles.ventaCliente}>👤 {getNombreCliente(v.id_cliente)}</p>
+                                            <p style={styles.ventaFecha}>
+                                                📅 {v.fecha_venta
+                                                    ? new Date(v.fecha_venta).toLocaleDateString('es-CO', {
+                                                        day: '2-digit', month: 'short',
+                                                        hour: '2-digit', minute: '2-digit'
+                                                    }) : '—'}
+                                            </p>
+                                        </div>
+                                        <div style={styles.ventaTotal}>
+                                            ${Number(v.total).toLocaleString()}
+                                        </div>
+                                        <button
+                                            onClick={() => setExpandido(expandido === v.id_venta ? null : v.id_venta)}
+                                            style={styles.botonVer}
+                                        >
+                                            {expandido === v.id_venta ? '▲ Ocultar' : '▼ Detalle'}
+                                        </button>
                                     </div>
-                                )}
-                            </div>
-                        ))}
+
+                                    {expandido === v.id_venta && v.detalles && (
+                                        <div style={styles.detallesContainer}>
+                                            <table style={styles.tabla}>
+                                                <thead>
+                                                    <tr style={{ backgroundColor: '#f0f4f0' }}>
+                                                        <th style={styles.th}>Producto</th>
+                                                        <th style={styles.th}>Talla</th>
+                                                        <th style={styles.th}>Cantidad original</th>
+                                                        <th style={styles.th}>Precio unit.</th>
+                                                        <th style={styles.th}>Subtotal</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {v.detalles.map(d => {
+                                                        const prod = productos.find(p => p.id_producto === d.id_producto);
+                                                        
+                                                        // NUEVO: Evaluación de devoluciones por fila de artículo
+                                                        const cantDevuelta = d.cantidad_devuelta || 0;
+                                                        const totalmenteDevuelto = cantDevuelta >= d.cantidad;
+
+                                                        return (
+                                                            <tr 
+                                                                key={d.id_detalle} 
+                                                                style={{ 
+                                                                    borderTop: '1px solid #f0f4f0',
+                                                                    backgroundColor: totalmenteDevuelto ? '#fff5f5' : 'transparent' 
+                                                                }}
+                                                            >
+                                                                <td style={{ 
+                                                                    ...styles.td, 
+                                                                    textDecoration: totalmenteDevuelto ? 'line-through' : 'none',
+                                                                    color: totalmenteDevuelto ? '#999' : '#333'
+                                                                }}>
+                                                                    {prod?.nombre || `Producto #${d.id_producto}`}
+                                                                </td>
+                                                                <td style={styles.td}>
+                                                                    <span style={styles.tallaPill}>{d.talla}</span>
+                                                                </td>
+                                                                <td style={styles.td}>
+                                                                    {d.cantidad} uds
+                                                                    {/* SE MODIFICÓ AQUÍ: Alerta por cada producto devuelto */}
+                                                                    {cantDevuelta > 0 && (
+                                                                        <span style={styles.badgeProductoDevuelto}>
+                                                                            🔄 {cantDevuelta} devuelta{cantDevuelta > 1 ? 's' : ''}
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td style={styles.td}>${Number(d.precio_unitario).toLocaleString()}</td>
+                                                                <td style={{ ...styles.td, color: totalmenteDevuelto ? '#bc4747' : '#2e7d52', fontWeight: 'bold' }}>
+                                                                    ${Number(d.subtotal).toLocaleString()}
+                                                                    {cantDevuelta > 0 && (
+                                                                        <div style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
+                                                                            {totalmenteDevuelto ? '(Anulado)' : '(Monto inicial)'}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -488,21 +617,36 @@ const styles = {
     exito: { color: '#2e7d52', backgroundColor: '#e8f5ee', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
     error: { color: '#e53935', backgroundColor: '#fdecea', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
 
-    formulario: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 2px 15px rgba(0,0,0,0.06)' },
-    formTitulo: { color: '#2e7d52', marginBottom: '20px', marginTop: 0 },
-    formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' },
+    // Modal interior
+    modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '24px 28px 0 28px' },
+    modalIconRow: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' },
+    modalIconCircle: { width: '42px', height: '42px', borderRadius: '12px', backgroundColor: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    modalTitulo: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
+    modalSubtitulo: { fontSize: '13px', color: '#888', margin: '2px 0 0 54px' },
+    botonCerrar: { background: 'none', border: 'none', fontSize: '18px', color: '#aaa', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', lineHeight: 1, flexShrink: 0 },
+
+    modalBody: { padding: '20px 28px' },
+    errorModal: { display: 'flex', gap: '8px', alignItems: 'center', color: '#e53935', backgroundColor: '#fdecea', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' },
+
+    modalFooter: { display: 'flex', gap: '10px', justifyContent: 'flex-end', padding: '16px 28px 24px 28px', borderTop: '1px solid #f0f0f0' },
+    botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 22px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' },
+    botonCancelar: { backgroundColor: 'white', color: '#666', border: '1.5px solid #ddd', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
+
+    // Form
+    formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '16px' },
     inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
     label: { fontSize: '13px', color: '#555', fontWeight: '600' },
+    requerido: { color: '#e53935' },
     labelSmall: { fontSize: '12px', color: '#777', fontWeight: '600', display: 'block', marginBottom: '4px' },
     select: { padding: '10px 14px', border: '1.5px solid #e0ede6', borderRadius: '8px', fontSize: '14px', outline: 'none', backgroundColor: 'white', width: '100%' },
     input: { padding: '10px 14px', border: '1.5px solid #e0ede6', borderRadius: '8px', fontSize: '14px', outline: 'none', width: '100%', boxSizing: 'border-box' },
-    metodosRow: { display: 'flex', gap: '10px' },
+    metodosRow: { display: 'flex', gap: '8px' },
     metodoBtn: { flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
 
-    productosSeccion: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '18px', marginBottom: '20px' },
-    seccionTitulo: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', marginBottom: '15px', marginTop: 0 },
-    itemCard: { backgroundColor: 'white', border: '1px solid #e0ede6', borderRadius: '10px', padding: '15px', marginBottom: '12px' },
-    itemHeader: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '14px' },
+    productosSeccion: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '16px', marginBottom: '16px' },
+    seccionTitulo: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', marginBottom: '12px', marginTop: 0 },
+    itemCard: { backgroundColor: 'white', border: '1px solid #e0ede6', borderRadius: '10px', padding: '14px', marginBottom: '10px' },
+    itemHeader: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px' },
     botonQuitar: { backgroundColor: '#fdecea', color: '#e53935', border: 'none', width: '34px', height: '34px', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 },
     tallasGrid: { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' },
     tallaCard: { border: '2px solid #e0ede6', borderRadius: '10px', padding: '10px 14px', minWidth: '80px', textAlign: 'center', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'center' },
@@ -511,13 +655,10 @@ const styles = {
     itemResumen: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f0faf4', borderRadius: '6px', padding: '8px 12px', fontSize: '13px', color: '#555' },
     botonAgregar: { backgroundColor: 'transparent', color: '#2e7d52', border: '1.5px dashed #2e7d52', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', width: '100%', marginTop: '4px' },
 
-    totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '18px 24px', borderRadius: '10px', marginBottom: '20px' },
+    totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '16px 20px', borderRadius: '10px', marginBottom: '4px' },
     totalLabel: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', margin: 0 },
     totalMetodo: { fontSize: '13px', color: '#888', margin: '4px 0 0 0' },
     totalValor: { fontSize: '28px', fontWeight: 'bold', color: '#2e7d52' },
-    formBotones: { display: 'flex', gap: '10px' },
-    botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' },
-    botonCancelar: { backgroundColor: 'white', color: '#666', border: '1px solid #ddd', padding: '12px 24px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
 
     lista: { display: 'flex', flexDirection: 'column', gap: '10px' },
     ventaCard: { backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', overflow: 'hidden' },
@@ -536,6 +677,10 @@ const styles = {
     td: { padding: '10px 14px', fontSize: '13px', color: '#333' },
     tallaPill: { backgroundColor: '#e8f5ee', color: '#2e7d52', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' },
     sinDatos: { backgroundColor: 'white', borderRadius: '12px', padding: '50px', textAlign: 'center', color: '#999' },
+    
+    // NUEVOS ESTILOS AGREGADOS:
+    badgeVentaDevuelta: { backgroundColor: '#fdecea', color: '#e53935', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px', border: '1px solid #fca8a6', display: 'inline-block' },
+    badgeProductoDevuelto: { backgroundColor: '#fff5f5', color: '#e53935', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '8px', border: '1px solid #fca8a6', display: 'inline-block' }
 };
 
 export default Ventas;

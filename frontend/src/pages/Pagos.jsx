@@ -9,8 +9,9 @@ const METODO_ICONS = { efectivo: '💵', transferencia: '🏦', tarjeta: '💳' 
 
 const formInicial = { id_credito: '', monto: '', metodo_pago: 'efectivo' };
 
-const esVencido = (c) => c.estado === 'activo' && new Date(c.fecha_fin) < new Date();
-const getEstadoCredito = (c) => esVencido(c) ? 'vencido' : c.estado;
+// Normalizamos a mayúsculas para evitar inconsistencias de la API
+const esVencido = (c) => c.estado?.toUpperCase() === 'ACTIVO' && new Date(c.fecha_fin) < new Date();
+const getEstadoCredito = (c) => esVencido(c) ? 'VENCIDO' : c.estado?.toUpperCase();
 
 const Pagos = () => {
     const [pagos, setPagos] = useState([]);
@@ -88,9 +89,9 @@ const Pagos = () => {
         return cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : `Cliente #${credito.id_cliente}`;
     };
 
-    // Solo créditos activos con saldo
+    // Filtro tolerante a mayúsculas/minúsculas de la API (Soporta PENDIENTE o ACTIVO con saldo)
     const creditosConSaldo = creditos.filter(c =>
-        c.estado === 'PENDIENTE' && parseFloat(c.saldo_pendiente) > 0
+        (c.estado?.toUpperCase() === 'PENDIENTE' || c.estado?.toUpperCase() === 'ACTIVO') && parseFloat(c.saldo_pendiente) > 0
     );
 
     const pagosFiltrados = pagos.filter(p => {
@@ -101,11 +102,13 @@ const Pagos = () => {
     });
 
     const totalRecaudado = pagos.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
+    
     const pagoHoy = pagos.filter(p =>
         new Date(p.fecha_pago).toDateString() === new Date().toDateString()
     ).reduce((s, p) => s + parseFloat(p.monto || 0), 0);
+
     const creditosPendientes = creditos.filter(c =>
-        c.estado === 'PENDIENTE' && parseFloat(c.saldo_pendiente) > 0
+        (c.estado?.toUpperCase() === 'PENDIENTE' || c.estado?.toUpperCase() === 'ACTIVO') && parseFloat(c.saldo_pendiente) > 0
     ).length;
 
     return (
@@ -183,7 +186,7 @@ const Pagos = () => {
                                         const cliente = clientes.find(cl => cl.id_cliente === c.id_cliente);
                                         return (
                                             <option key={c.id_credito} value={c.id_credito}>
-                                                Crédito #{c.id_credito} — {cliente?.nombre || 'Cliente'} — Saldo: ${Number(c.saldo_pendiente).toLocaleString()}
+                                                Crédito #{c.id_credito} — {cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : 'Cliente'} — Saldo: ${Number(c.saldo_pendiente).toLocaleString()}
                                             </option>
                                         );
                                     })}
@@ -199,7 +202,7 @@ const Pagos = () => {
                                 </select>
                             </div>
 
-                            <div style={styles.inputGroup}>
+                            <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
                                 <label style={styles.label}>Monto *</label>
                                 <input
                                     name="monto" type="number" min="0"

@@ -10,22 +10,31 @@ const Sidebar = () => {
         navigate('/login');
     };
 
+    // 1. Definimos todos los ítems posibles del menú
     const menuItems = [
-        { path: '/dashboard', icon: '🏠', label: 'Dashboard' },
-        { path: '/productos', icon: '📦', label: 'Productos' },
-        { path: '/clientes', icon: '👥', label: 'Clientes' },
-        { path: '/proveedores', icon: '🏭', label: 'Proveedores' },
-        { path: '/compras', icon: '🛒', label: 'Compras' },
-        { path: '/ventas', icon: '💵', label: 'Ventas' },
-        { path: '/creditos', icon: '📋', label: 'Créditos' },
-        { path: '/pagos', icon: '💰', label: 'Pagos' },
+        { path: '/dashboard', icon: '🏠', label: 'Dashboard', rolesPermitidos: [1, 2] },
+        { path: '/productos', icon: '📦', label: 'Productos', rolesPermitidos: [1, 2] },
+        { path: '/clientes', icon: '👥', label: 'Clientes', rolesPermitidos: [1, 2] },
+        { path: '/proveedores', icon: '🏭', label: 'Proveedores', rolesPermitidos: [1] }, // Solo Admin
+        { path: '/compras', icon: '🛒', label: 'Compras', rolesPermitidos: [1] },         // Solo Admin
+        { path: '/ventas', icon: '💵', label: 'Ventas', rolesPermitidos: [1, 2] },
+        { path: '/creditos', icon: '📋', label: 'Créditos', rolesPermitidos: [1, 2] },
+        { path: '/pagos', icon: '💰', label: 'Pagos', rolesPermitidos: [1, 2] },
+        { path: '/cambios', icon: '🔄', label: 'Cambios', rolesPermitidos: [1, 2] },
+        { path: '/usuarios', icon: '⚙️', label: 'Usuarios', rolesPermitidos: [1] },
+        
     ];
+
+    // 2. Filtramos los ítems según el rol del usuario conectado
+    const menuFiltrado = menuItems.filter(item => 
+        item.rolesPermitidos.includes(usuario?.id_rol)
+    );
 
     return (
         <div style={styles.sidebar}>
             <div style={styles.logo}>
                 <span style={styles.logoIcon}>🛍️</span>
-                <span style={styles.logoText}>whiteblack</span>
+                <span style={styles.logoText}>SADA-FLOW</span>
             </div>
             <div style={styles.usuarioCard}>
                 <div style={styles.avatar}>
@@ -39,7 +48,8 @@ const Sidebar = () => {
                 </div>
             </div>
             <nav style={styles.nav}>
-                {menuItems.map((item) => (
+                {/* 3. Renderizamos el menú ya filtrado */}
+                {menuFiltrado.map((item) => (
                     <Link
                         key={item.path}
                         to={item.path}

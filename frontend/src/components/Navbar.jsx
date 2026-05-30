@@ -9,20 +9,37 @@ const Navbar = () => {
         navigate('/login');
     };
 
+    // Validamos de forma sencilla si es Administrador
+    const esAdmin = usuario?.id_rol === 1;
+
     return (
         <nav style={styles.nav}>
-            <div style={styles.logo}>whiteblack</div>
+            <div style={styles.logo}>SADA-FLOW</div>
             <div style={styles.links}>
                 <Link to="/dashboard" style={styles.link}>Dashboard</Link>
                 <Link to="/productos" style={styles.link}>Productos</Link>
                 <Link to="/clientes" style={styles.link}>Clientes</Link>
-                <Link to="/proveedores" style={styles.link}>Proveedores</Link>
-                <Link to="/compras" style={styles.link}>Compras</Link>
-                <Link to="/planes-separe" style={styles.link}>Planes Separe</Link>
+                
+                {/* Rutas exclusivas para el administrador */}
+                {esAdmin && (
+                    <>
+                        <Link to="/proveedores" style={styles.link}>Proveedores</Link>
+                        <Link to="/compras" style={styles.link}>Compras</Link>
+                        <Link to="/usuarios" style={styles.link}>Usuarios</Link>
+                        
+                    </>
+                )}
+                
+                
+                <Route path="/ventas" style={styles.link}>Ventas</Route>
                 <Link to="/pagos" style={styles.link}>Pagos</Link>
+                <Link to="/creditos" style={styles.link}>Créditos</Link>
+                <Link to="/cambios" style={styles.link}>Cambios</Link>
             </div>
             <div style={styles.user}>
-                <span style={styles.userName}>👤 {usuario?.nombre}</span>
+                <span style={styles.userName}>
+                    👤 {usuario?.nombre} ({esAdmin ? 'Admin' : 'Vendedor'})
+                </span>
                 <button onClick={handleLogout} style={styles.logout}>Cerrar sesión</button>
             </div>
         </nav>
@@ -30,44 +47,13 @@ const Navbar = () => {
 };
 
 const styles = {
-    nav: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: '#1a1a2e',
-        padding: '10px 20px',
-        color: 'white',
-    },
-    logo: {
-        fontSize: '20px',
-        fontWeight: 'bold',
-        color: '#e94560',
-    },
-    links: {
-        display: 'flex',
-        gap: '15px',
-    },
-    link: {
-        color: 'white',
-        textDecoration: 'none',
-        fontSize: '14px',
-    },
-    user: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-    },
-    userName: {
-        fontSize: '14px',
-    },
-    logout: {
-        backgroundColor: '#e94560',
-        color: 'white',
-        border: 'none',
-        padding: '5px 10px',
-        borderRadius: '5px',
-        cursor: 'pointer',
-    }
+    nav: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1a1a2e', padding: '10px 20px', color: 'white' },
+    logo: { fontSize: '20px', fontWeight: 'bold', color: '#e94560' },
+    links: { display: 'flex', gap: '15px' },
+    link: { color: 'white', textDecoration: 'none', fontSize: '14px' },
+    user: { display: 'flex', alignItems: 'center', gap: '10px' },
+    userName: { fontSize: '14px' },
+    logout: { backgroundColor: '#e94560', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer' }
 };
 
 export default Navbar;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'; 
 import Sidebar from '../components/Sidebar';
 import { getCreditos, crearCredito, cancelarCredito } from '../api/creditos';
 import { getClientes } from '../api/clientes';
@@ -11,6 +11,55 @@ const ESTADOS = {
 };
 
 const itemVacio = () => ({ id_producto: '', talla: '', cantidad: 1, precio_unitario: '' });
+
+/* ─── COMPONENTE MODAL ANIMADO ─── */
+const Modal = ({ isOpen, onClose, children }) => {
+    const overlayRef = useRef(null);
+    const [render, setRender] = useState(isOpen);
+    const [animar, setAnimar] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setRender(true);
+            // Pequeño delay para que el navegador registre el cambio de DOM antes de animar
+            const timeout = setTimeout(() => setAnimar(true), 10);
+            document.body.style.overflow = 'hidden';
+            return () => clearTimeout(timeout);
+        } else {
+            setAnimar(false);
+            // Espera a que termine la animación de salida (300ms) antes de desmontar
+            const timeout = setTimeout(() => setRender(false), 300);
+            document.body.style.overflow = '';
+            return () => clearTimeout(timeout);
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        if (isOpen) document.addEventListener('keydown', handleKey);
+        return () => document.removeEventListener('keydown', handleKey);
+    }, [isOpen, onClose]);
+
+    if (!render) return null;
+
+    return (
+        <div
+            ref={overlayRef}
+            onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+            style={{
+                ...modalStyles.overlay,
+                opacity: animar ? 1 : 0,
+            }}
+        >
+            <div style={{
+                ...modalStyles.container,
+                transform: animar ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(-20px)',
+            }}>
+                {children}
+            </div>
+        </div>
+    );
+};
 
 const Creditos = () => {
     const [creditos, setCreditos] = useState([]);
@@ -73,6 +122,14 @@ const Creditos = () => {
         s + (parseFloat(i.precio_unitario) || 0) * (parseInt(i.cantidad) || 0), 0
     );
 
+    const cerrarFormulario = () => {
+        setMostrarForm(false);
+        setIdCliente('');
+        setFechaFin('');
+        setItems([itemVacio()]);
+        setError('');
+    };
+
     const handleGuardar = async () => {
         if (!idCliente || !fechaFin) {
             setError('Cliente y fecha límite son obligatorios');
@@ -97,11 +154,7 @@ const Creditos = () => {
                     precio_unitario: parseFloat(i.precio_unitario),
                 }))
             });
-            setMostrarForm(false);
-            setIdCliente('');
-            setFechaFin('');
-            setItems([itemVacio()]);
-            setError('');
+            cerrarFormulario();
             cargarTodo();
         } catch (err) {
             setError(err.response?.data?.error || 'Error al crear el crédito');
@@ -132,20 +185,20 @@ const Creditos = () => {
         c.estado === 'PENDIENTE' && new Date(c.fecha_limite) < new Date();
     const getEstado = (c) => esVencido(c) ? 'VENCIDO' : c.estado;
 
-const creditosFiltrados = creditos.filter(c => {
-    const estado = getEstado(c);
-    const matchFiltro = filtro === 'todos' || estado === filtro;
-    const nombre = getNombreCliente(c.id_cliente).toLowerCase();
-    const matchBusqueda = !busqueda || nombre.includes(busqueda.toLowerCase());
-    return matchFiltro && matchBusqueda;
-});
+    const creditosFiltrados = creditos.filter(c => {
+        const estado = getEstado(c);
+        const matchFiltro = filtro === 'todos' || estado === filtro;
+        const nombre = getNombreCliente(c.id_cliente).toLowerCase();
+        const matchBusqueda = !busqueda || nombre.includes(busqueda.toLowerCase());
+        return matchFiltro && matchBusqueda;
+    });
 
-const resumen = {
-    activos:  creditos.filter(c => c.estado === 'PENDIENTE' && !esVencido(c)).length,
-    vencidos: creditos.filter(c => esVencido(c)).length,
-    pagados:  creditos.filter(c => c.estado === 'PAGADO').length,
-    saldo:    creditos.reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0),
-};
+    const resumen = {
+        activos:  creditos.filter(c => c.estado === 'PENDIENTE' && !esVencido(c)).length,
+        vencidos: creditos.filter(c => esVencido(c)).length,
+        pagados:  creditos.filter(c => c.estado === 'PAGADO').length,
+        saldo:    creditos.reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0),
+    };
 
     return (
         <div style={styles.layout}>
@@ -187,28 +240,32 @@ const resumen = {
                             onChange={e => setBusqueda(e.target.value)}
                             style={styles.buscador}
                         />
-                            </div>
-                            <div style={styles.filtrosBotones}>
-                            {['todos', 'PENDIENTE', 'VENCIDO', 'PAGADO'].map(f => (
-            <button key={f} onClick={() => setFiltro(f)} style={{
-                ...styles.filtroBton,
-                backgroundColor: filtro === f ? '#2e7d52' : 'white',
-                color: filtro === f ? 'white' : '#555',
-            }}>
-                {f === 'todos' ? 'Todos' :
-                f === 'PENDIENTE' ? 'Pendiente' :
-                f === 'VENCIDO' ? 'Vencido' : 'Pagado'}
-            </button>
-        ))}
+                    </div>
+                    <div style={styles.filtrosBotones}>
+                        {['todos', 'PENDIENTE', 'VENCIDO', 'PAGADO'].map(f => (
+                            <button key={f} onClick={() => setFiltro(f)} style={{
+                                ...styles.filtroBton,
+                                backgroundColor: filtro === f ? '#2e7d52' : 'white',
+                                color: filtro === f ? 'white' : '#555',
+                            }}>
+                                {f === 'todos' ? 'Todos' :
+                                f === 'PENDIENTE' ? 'Pendiente' :
+                                f === 'VENCIDO' ? 'Vencido' : 'Pagado'}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
                 {error && <p style={styles.error}>{error}</p>}
 
-                {/* Formulario */}
-                {mostrarForm && (
+                {/* VENTANA EMERGENTE CON ANIMACIÓN */}
+                <Modal isOpen={mostrarForm} onClose={cerrarFormulario}>
                     <div style={styles.formulario}>
-                        <h3 style={styles.formTitulo}>➕ Nuevo Crédito</h3>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h3 style={styles.formTitulo}>➕ Nuevo Crédito</h3>
+                            <button onClick={cerrarFormulario} style={styles.botonCerrarModal}>✕</button>
+                        </div>
+                        
                         <div style={styles.formGrid}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Cliente *</label>
@@ -310,10 +367,10 @@ const resumen = {
 
                         <div style={styles.formBotones}>
                             <button onClick={handleGuardar} style={styles.botonGuardar}>💾 Crear Crédito</button>
-                            <button onClick={() => { setMostrarForm(false); setItems([itemVacio()]); }} style={styles.botonCancelar}>Cancelar</button>
+                            <button onClick={cerrarFormulario} style={styles.botonCancelar}>Cancelar</button>
                         </div>
                     </div>
-                )}
+                </Modal>
 
                 {/* Lista */}
                 {cargando ? (
@@ -331,6 +388,7 @@ const resumen = {
                             const porcentaje = credito.valor_total > 0
                                 ? ((credito.valor_total - credito.saldo_pendiente) / credito.valor_total) * 100
                                 : 0;
+                            const estaExpandido = expandido === credito.id_credito;
 
                             return (
                                 <div key={credito.id_credito} style={styles.creditoCard}>
@@ -364,10 +422,10 @@ const resumen = {
 
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             <button
-                                                onClick={() => setExpandido(expandido === credito.id_credito ? null : credito.id_credito)}
+                                                onClick={() => setExpandido(estaExpandido ? null : credito.id_credito)}
                                                 style={styles.botonVerProductos}
                                             >
-                                                {expandido === credito.id_credito ? '▲ Ocultar' : '▼ Ver productos'}
+                                                {estaExpandido ? '▲ Ocultar' : '▼ Ver productos'}
                                             </button>
                                             {estado === 'PENDIENTE' && (
                                                 <button onClick={() => handleCancelar(credito.id_credito)} style={styles.botonCancelarCredito}>
@@ -389,8 +447,12 @@ const resumen = {
                                         <span style={styles.progressLabel}>{porcentaje.toFixed(0)}% pagado</span>
                                     </div>
 
-                                    {/* Productos expandidos */}
-                                    {expandido === credito.id_credito && (
+                                    {/* Productos expandidos con transición Max-Height */}
+                                    <div style={{
+                                        ...styles.productosExpandidosWrapper,
+                                        maxHeight: estaExpandido ? '500px' : '0px',
+                                        opacity: estaExpandido ? 1 : 0,
+                                    }}>
                                         <div style={styles.productosExpandidos}>
                                             <p style={styles.productosExpandidosTitulo}>👕 Productos del crédito</p>
                                             {credito.detalles && credito.detalles.length > 0 ? (
@@ -421,10 +483,11 @@ const resumen = {
                                                     </tbody>
                                                 </table>
                                             ) : (
-                                                <p style={{ color: '#999', fontSize: '13px' }}>Sin productos</p>
+                                                <p style={{ color: '#999', fontSize: '13px', margin: 0 }}>Sin productos</p>
                                             )}
                                         </div>
-                                    )}
+                                    </div>
+
                                 </div>
                             );
                         })}
@@ -435,13 +498,41 @@ const resumen = {
     );
 };
 
+/* ─── ESTILOS ACTUALIZADOS PARA TRANSICIONES SUAVES ─── */
+const modalStyles = {
+    overlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        display: 'flex',
+        justify: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+        padding: '20px',
+        transition: 'opacity 0.3s ease-in-out', // Animación de fundido del overlay
+    },
+    container: {
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        width: '100%',
+        maxWidth: '900px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+        transition: 'transform 0.3s ease-in-out', // Animación de escala/desplazamiento del modal
+    }
+};
+
 const styles = {
     layout: { display: 'flex', minHeight: '100vh', backgroundColor: '#f0f4f0' },
     contenido: { marginLeft: '250px', flex: 1, padding: '30px' },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #e0ede6' },
     titulo: { fontSize: '26px', color: '#2e7d52', fontWeight: 'bold', margin: 0 },
     subtitulo: { color: '#666', marginTop: '4px', fontSize: '14px' },
-    botonNuevo: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' },
+    botonNuevo: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', transition: 'background-color 0.2s' },
     resumenGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' },
     resumenCard: { backgroundColor: 'white', padding: '18px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
     resumenNumero: { fontSize: '22px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 4px 0' },
@@ -450,10 +541,11 @@ const styles = {
     buscadorContainer: { display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'white', border: '1.5px solid #e0ede6', borderRadius: '10px', padding: '0 15px', flex: 1 },
     buscador: { border: 'none', outline: 'none', padding: '11px 0', fontSize: '14px', width: '100%' },
     filtrosBotones: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
-    filtroBton: { border: '1.5px solid #e0ede6', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+    filtroBton: { border: '1.5px solid #e0ede6', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s' },
     error: { color: '#e53935', backgroundColor: '#fdecea', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
-    formulario: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 2px 15px rgba(0,0,0,0.06)' },
-    formTitulo: { color: '#2e7d52', marginBottom: '20px', marginTop: 0 },
+    formulario: { padding: '25px' },
+    formTitulo: { color: '#2e7d52', margin: 0 },
+    botonCerrarModal: { background: 'none', border: 'none', fontSize: '20px', color: '#888', cursor: 'pointer' },
     formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' },
     inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
     label: { fontSize: '13px', color: '#555', fontWeight: '600' },
@@ -469,7 +561,7 @@ const styles = {
     totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '15px 20px', borderRadius: '10px', marginBottom: '20px' },
     totalLabel: { fontSize: '14px', fontWeight: '700', color: '#2e7d52' },
     totalValor: { fontSize: '22px', fontWeight: 'bold', color: '#2e7d52' },
-    formBotones: { display: 'flex', gap: '10px' },
+    formBotones: { display: 'flex', gap: '10px', justifyContent: 'flex-end' },
     botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
     botonCancelar: { backgroundColor: 'white', color: '#666', border: '1px solid #ddd', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer' },
     lista: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -490,14 +582,21 @@ const styles = {
     progressContainer: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', borderTop: '1px solid #f0f4f0', backgroundColor: '#fafffe' },
     progressBar: { flex: 1, height: '8px', backgroundColor: '#e0ede6', borderRadius: '4px', overflow: 'hidden' },
     progressFill: { height: '100%', borderRadius: '4px', transition: 'width 0.3s ease' },
-    progressLabel: { fontSize: '12px', color: '#666', minWidth: '70px', textAlign: 'right' },
-    productosExpandidos: { borderTop: '1px solid #f0f4f0', padding: '15px 20px', backgroundColor: '#fafffe' },
-    productosExpandidosTitulo: { fontSize: '13px', fontWeight: '700', color: '#2e7d52', margin: '0 0 12px 0' },
+    sinDatos: { textAlign: 'center', padding: '40px', color: '#666', backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' },
+    
+    /* Contenedor envoltorio para colapsar y expandir con suavidad */
+    productosExpandidosWrapper: {
+        overflow: 'hidden',
+        transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
+        borderTop: '1px solid #f0f4f0',
+        backgroundColor: '#fcfdfd'
+    },
+    productosExpandidos: { padding: '20px' },
+    productosExpandidosTitulo: { fontSize: '14px', fontWeight: 'bold', color: '#2e7d52', marginTop: 0, marginBottom: '12px' },
     tabla: { width: '100%', borderCollapse: 'collapse' },
-    th: { padding: '10px 14px', textAlign: 'left', fontSize: '12px', color: '#555', fontWeight: '600' },
-    td: { padding: '10px 14px', fontSize: '13px', color: '#333' },
-    tallaPill: { backgroundColor: '#e8f5ee', color: '#2e7d52', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' },
-    sinDatos: { backgroundColor: 'white', borderRadius: '12px', padding: '50px', textAlign: 'center', color: '#999' },
+    th: { textAlign: 'left', padding: '10px 12px', fontSize: '13px', color: '#555', fontWeight: '600' },
+    td: { padding: '12px', fontSize: '14px', color: '#333' },
+    tallaPill: { backgroundColor: '#f0f4f0', color: '#2e7d52', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }
 };
 
 export default Creditos;

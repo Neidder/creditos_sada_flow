@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import { getDashboard } from '../api/dashboard';
+import { 
+    AreaChart, 
+    Area, 
+    XAxis, 
+    YAxis, 
+    CartesianGrid, 
+    Tooltip, 
+    ResponsiveContainer 
+} from 'recharts';
 
 const METODO_ICONS = {
     efectivo: '💵',
@@ -51,6 +60,38 @@ const Dashboard = () => {
 
     const totalMetodos = Object.values(data.pagos_por_metodo).reduce((s, v) => s + v, 0);
 
+    // ─── GENERACIÓN DINÁMICA DE DÍAS REALES DEL MES ACTUAL ───
+    const obtenerDatosGraficoReales = () => {
+        if (!data || !data.ventas_diarias) return [];
+        
+        const hoy = new Date();
+        const año = hoy.getFullYear();
+        const mes = hoy.getMonth(); 
+        
+        // Obtiene el último día del mes en curso (ej: 30 o 31)
+        const ultimoDiaMes = new Date(año, mes + 1, 0).getDate();
+        
+        const mapeoBackend = {};
+        data.ventas_diarias.forEach(item => {
+            mapeoBackend[parseInt(item.dia, 10)] = parseFloat(item.total || 0);
+        });
+
+        const diasCompletos = [];
+        for (let d = 1; d <= ultimoDiaMes; d++) {
+            const diaFormateado = d < 10 ? `0${d}` : `${d}`;
+            diasCompletos.push({
+                dia: diaFormateado,
+                total: mapeoBackend[d] !== undefined ? mapeoBackend[d] : 0
+            });
+        }
+        return diasCompletos;
+    };
+
+    const datosGraficoVentas = obtenerDatosGraficoReales();
+
+    const formatMoneda = (valor) => `$${Number(valor).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
+    const nombreMesActual = new Date().toLocaleDateString('es-CO', { month: 'long' });
+
     return (
         <div style={styles.layout}>
             <Sidebar />
@@ -69,7 +110,7 @@ const Dashboard = () => {
                     </button>
                 </div>
 
-                {/* ── Tarjetas generales ── */}
+                {/* Tarjetas generales */}
                 <div style={styles.cardsGrid}>
                     {[
                         { icon: '👥', label: 'Clientes', valor: data.generales.clientes, color: '#1565c0', bg: '#e3f2fd' },
@@ -89,7 +130,7 @@ const Dashboard = () => {
                     ))}
                 </div>
 
-                {/* ── Finanzas del mes ── */}
+                {/* Finanzas del mes */}
                 <div style={styles.seccionTitulo}>💰 Resumen financiero del mes</div>
                 <div style={styles.finanzasGrid}>
                     {[
@@ -110,9 +151,65 @@ const Dashboard = () => {
                     ))}
                 </div>
 
-                {/* ── Fila de tablas ── */}
-                <div style={styles.tablasFila}>
+                {/* 📊 SECCIÓN: GRÁFICO DE TENDENCIA DE VENTAS DIARIAS REALES */}
+                <div style={styles.graficoCard}>
+                    <div style={styles.graficoHeader}>
+                        <div>
+                            <h3 style={styles.graficoTitulo}>📈 Ventas Diarias</h3>
+                            <p style={styles.graficoSubtitulo}>Evolución del flujo de caja e ingresos del mes</p>
+                        </div>
+                        <span style={styles.periodoBadge}>
+                            {nombreMesActual.charAt(0).toUpperCase() + nombreMesActual.slice(1)} {new Date().getFullYear()}
+                        </span>
+                    </div>
 
+                    <div style={{ width: '100%', height: 280 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart
+                                data={datosGraficoVentas}
+                                margin={{ top: 10, right: 20, left: 15, bottom: 5 }}
+                            >
+                                <defs>
+                                    <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#2e7d52" stopOpacity={0.35}/>
+                                        <stop offset="95%" stopColor="#2e7d52" stopOpacity={0.0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e0ede6" vertical={false} />
+                                <XAxis 
+                                    dataKey="dia" 
+                                    tickLine={false} 
+                                    stroke="#888"
+                                    style={{ fontSize: '12px', fontWeight: '500' }}
+                                    tickFormatter={(val) => `Día ${val}`}
+                                />
+                                <YAxis 
+                                    tickLine={false} 
+                                    axisLine={false}
+                                    stroke="#888"
+                                    style={{ fontSize: '11px', fontWeight: '500' }}
+                                    tickFormatter={formatMoneda}
+                                />
+                                <Tooltip 
+                                    formatter={(value) => [formatMoneda(value), 'Total Recaudado']}
+                                    labelFormatter={(label) => `Día ${label} de ${nombreMesActual}`}
+                                    contentStyle={styles.tooltipCustom}
+                                />
+                                <Area 
+                                    type="monotone" 
+                                    dataKey="total" 
+                                    stroke="#2e7d52" 
+                                    strokeWidth={3}
+                                    fillOpacity={1} 
+                                    fill="url(#colorVentas)" 
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Fila de tablas */}
+                <div style={styles.tablasFila}>
                     {/* Últimos pagos */}
                     <div style={styles.tablaCard}>
                         <p style={styles.tablaTitulo}>💰 Últimos pagos</p>
@@ -176,9 +273,8 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                {/* ── Fila inferior ── */}
+                {/* Fila inferior */}
                 <div style={styles.tablasFila}>
-
                     {/* Stock bajo */}
                     <div style={styles.tablaCard}>
                         <p style={styles.tablaTitulo}>⚠️ Productos con stock bajo</p>
@@ -237,8 +333,8 @@ const Dashboard = () => {
                             </div>
                         )}
                     </div>
-
                 </div>
+
             </div>
         </div>
     );
@@ -253,13 +349,11 @@ const styles = {
     botonRefresh: { backgroundColor: 'white', color: '#2e7d52', border: '1.5px solid #2e7d52', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
     cargando: { textAlign: 'center', padding: '80px', color: '#999' },
     error: { color: '#e53935', backgroundColor: '#fdecea', padding: '15px', borderRadius: '8px' },
-
     cardsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '25px' },
     card: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '16px' },
     cardIcono: { width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 },
     cardValor: { fontSize: '28px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
     cardLabel: { fontSize: '13px', color: '#888', margin: '2px 0 0 0' },
-
     seccionTitulo: { fontSize: '15px', fontWeight: '700', color: '#2d2d2d', marginBottom: '14px' },
     finanzasGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '25px' },
     finanzaCard: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
@@ -267,7 +361,12 @@ const styles = {
     finanzaIcon: { fontSize: '18px' },
     finanzaLabel: { fontSize: '12px', color: '#888' },
     finanzaValor: { fontSize: '22px', fontWeight: 'bold', margin: 0 },
-
+    graficoCard: { backgroundColor: 'white', borderRadius: '12px', padding: '22px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: '1px solid #e0ede6', marginBottom: '25px' },
+    graficoHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' },
+    graficoTitulo: { fontSize: '14px', fontWeight: '700', color: '#2d2d2d', margin: 0 },
+    graficoSubtitulo: { fontSize: '12px', color: '#888', margin: '3px 0 0 0' },
+    periodoBadge: { backgroundColor: '#e8f5ee', color: '#2e7d52', padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700' },
+    tooltipCustom: { backgroundColor: '#ffffff', border: '1px solid #e0ede6', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px', fontFamily: 'inherit' },
     tablasFila: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' },
     tablaCard: { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
     tablaTitulo: { fontSize: '14px', fontWeight: '700', color: '#2d2d2d', margin: '0 0 15px 0' },
@@ -277,12 +376,10 @@ const styles = {
     tablaFila: { borderTop: '1px solid #f0f4f0' },
     td: { padding: '10px 12px', fontSize: '13px', color: '#333' },
     sinDatos: { textAlign: 'center', color: '#aaa', fontSize: '13px', padding: '20px 0' },
-
     stockLista: { display: 'flex', flexDirection: 'column', gap: '10px' },
     stockItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#fafafa', borderRadius: '8px' },
     stockNombre: { fontSize: '13px', color: '#333' },
     stockBadge: { padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
-
     metodosLista: { display: 'flex', flexDirection: 'column', gap: '14px' },
     metodoItem: { display: 'flex', flexDirection: 'column', gap: '5px' },
     metodoTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },

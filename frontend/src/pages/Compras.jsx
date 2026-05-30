@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import { getCompras, crearCompra, getDetallesCompra } from '../api/compras';
 import { getProductos } from '../api/productos';
@@ -6,7 +6,6 @@ import { getProveedores } from '../api/proveedores';
 
 const STOCK_MINIMO = 3;
 
-// Grupos de tallas disponibles para seleccionar al comprar
 const GRUPOS_TALLA = [
     { label: '👕 Ropa', tallas: ['XS', 'S', 'M', 'L', 'XL', 'XXL'] },
     { label: '👖 Pantalón adulto', tallas: ['28', '30', '32', '34', '36', '38', '40'] },
@@ -14,21 +13,75 @@ const GRUPOS_TALLA = [
     { label: '🏷️ Talla única', tallas: ['ÚNICA'] },
 ];
 
+/* ─── Modal (igual al de Proveedores) ─── */
+const Modal = ({ isOpen, onClose, children }) => {
+    const overlayRef = useRef(null);
+
+    useEffect(() => {
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        if (isOpen) {
+            document.addEventListener('keydown', handleKey);
+            document.body.style.overflow = 'hidden';
+        }
+        return () => {
+            document.removeEventListener('keydown', handleKey);
+            document.body.style.overflow = '';
+        };
+    }, [isOpen, onClose]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div
+            ref={overlayRef}
+            onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+            style={modalStyles.overlay}
+        >
+            <div style={modalStyles.container}>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+const modalStyles = {
+    overlay: {
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px',
+    },
+    container: {
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        boxShadow: '0 25px 60px rgba(0,0,0,0.18)',
+        width: '100%',
+        maxWidth: '680px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        animation: 'modalIn 0.2s ease',
+    },
+};
+
+const itemInicial = { id_producto: '', precio_unitario: '', grupoTalla: '', tallas: {} };
+
 const Compras = () => {
     const [compras, setCompras] = useState([]);
     const [productos, setProductos] = useState([]);
     const [proveedores, setProveedores] = useState([]);
-    const [mostrarForm, setMostrarForm] = useState(false);
+    const [modalAbierto, setModalAbierto] = useState(false);
     const [expandido, setExpandido] = useState(null);
     const [detallesExpandido, setDetallesExpandido] = useState({});
     const [error, setError] = useState('');
+    const [errorModal, setErrorModal] = useState('');
     const [cargando, setCargando] = useState(false);
     const [idProveedor, setIdProveedor] = useState('');
-
-    // Cada item: id_producto, precio_unitario, grupo de talla seleccionado, tallas: {S: 0, M: 5, ...}
-    const [items, setItems] = useState([
-        { id_producto: '', precio_unitario: '', grupoTalla: '', tallas: {} }
-    ]);
+    const [items, setItems] = useState([{ ...itemInicial }]);
 
     const usuario = JSON.parse(localStorage.getItem('usuario'));
 
@@ -50,12 +103,10 @@ const Compras = () => {
         }
     };
 
-    const getProductoSeleccionado = (idProducto) => {
-        if (!idProducto) return null;
-        return productos.find(p => p.id_producto === parseInt(idProducto));
-    };
+    /* ─── helpers ─── */
+    const getProductoSeleccionado = (idProducto) =>
+        idProducto ? productos.find(p => p.id_producto === parseInt(idProducto)) : null;
 
-    // Detectar el grupo de talla más adecuado según las tallas existentes del producto
     const detectarGrupoTalla = (producto) => {
         if (!producto?.tallas?.length) return '';
         const primera = producto.tallas[0].talla;
@@ -65,6 +116,26 @@ const Compras = () => {
         return '';
     };
 
+    const getTallasDelGrupo = (item) => {
+        const grupo = GRUPOS_TALLA.find(g => g.label === item.grupoTalla);
+        if (!grupo) return [];
+        const prod = getProductoSeleccionado(item.id_producto);
+        return grupo.tallas.map(talla => {
+            const tallaExistente = prod?.tallas?.find(t => t.talla === talla);
+            return { talla, stockActual: tallaExistente ? tallaExistente.cantidad : 0, tieneStock: !!tallaExistente };
+        });
+    };
+
+    const calcularTotalUnidades = (item) =>
+        Object.values(item.tallas).reduce((s, c) => s + c, 0);
+
+    const calcularSubtotalItem = (item) =>
+        calcularTotalUnidades(item) * (parseFloat(item.precio_unitario) || 0);
+
+    const calcularTotal = () =>
+        items.reduce((s, item) => s + calcularSubtotalItem(item), 0);
+
+    /* ─── handlers items ─── */
     const handleProductoChange = (index, idProducto) => {
         const nuevos = [...items];
         nuevos[index].id_producto = idProducto;
@@ -84,7 +155,6 @@ const Compras = () => {
     const handleGrupoTallaChange = (index, labelGrupo) => {
         const nuevos = [...items];
         nuevos[index].grupoTalla = labelGrupo;
-        // Limpiar tallas seleccionadas al cambiar de grupo
         nuevos[index].tallas = {};
         setItems(nuevos);
     };
@@ -101,28 +171,28 @@ const Compras = () => {
         setItems(nuevos);
     };
 
-    const agregarItem = () => {
-        setItems([...items, { id_producto: '', precio_unitario: '', grupoTalla: '', tallas: {} }]);
-    };
+    const agregarItem = () => setItems([...items, { ...itemInicial }]);
 
     const quitarItem = (index) => {
         if (items.length === 1) return;
         setItems(items.filter((_, i) => i !== index));
     };
 
-    const calcularSubtotalItem = (item) => {
-        const totalUnidades = Object.values(item.tallas).reduce((s, c) => s + c, 0);
-        return totalUnidades * (parseFloat(item.precio_unitario) || 0);
+    /* ─── modal handlers ─── */
+    const handleNueva = () => {
+        setIdProveedor('');
+        setItems([{ ...itemInicial }]);
+        setErrorModal('');
+        setModalAbierto(true);
     };
 
-    const calcularTotalUnidades = (item) =>
-        Object.values(item.tallas).reduce((s, c) => s + c, 0);
-
-    const calcularTotal = () =>
-        items.reduce((s, item) => s + calcularSubtotalItem(item), 0);
+    const handleCerrarModal = () => {
+        setModalAbierto(false);
+        setErrorModal('');
+    };
 
     const handleGuardar = async () => {
-        if (!idProveedor) { setError('Selecciona un proveedor'); return; }
+        if (!idProveedor) { setErrorModal('Selecciona un proveedor'); return; }
 
         const detalles = [];
         for (const item of items) {
@@ -140,7 +210,7 @@ const Compras = () => {
         }
 
         if (detalles.length === 0) {
-            setError('Debes ingresar al menos una talla con cantidad mayor a 0');
+            setErrorModal('Debes ingresar al menos una talla con cantidad mayor a 0');
             return;
         }
 
@@ -152,16 +222,17 @@ const Compras = () => {
 
         try {
             await crearCompra(payload);
-            setMostrarForm(false);
+            setModalAbierto(false);
             setIdProveedor('');
-            setItems([{ id_producto: '', precio_unitario: '', grupoTalla: '', tallas: {} }]);
+            setItems([{ ...itemInicial }]);
             cargarTodo();
             setError('');
         } catch (err) {
-            setError(err.response?.data?.error || 'Error al registrar la compra');
+            setErrorModal(err.response?.data?.error || 'Error al registrar la compra');
         }
     };
 
+    /* ─── detalles expandibles ─── */
     const handleVerDetalles = async (id) => {
         if (expandido === id) { setExpandido(null); return; }
         setExpandido(id);
@@ -183,26 +254,19 @@ const Compras = () => {
         return p ? p.nombre_empresa : `Proveedor #${id}`;
     };
 
-    // Obtener tallas del grupo seleccionado y su stock actual del producto
-    const getTallasDelGrupo = (item) => {
-        const grupo = GRUPOS_TALLA.find(g => g.label === item.grupoTalla);
-        if (!grupo) return [];
-        const prod = getProductoSeleccionado(item.id_producto);
-        return grupo.tallas.map(talla => {
-            const tallaExistente = prod?.tallas?.find(t => t.talla === talla);
-            return {
-                talla,
-                stockActual: tallaExistente ? tallaExistente.cantidad : 0,
-                tieneStock: !!tallaExistente,
-            };
-        });
-    };
-
     return (
         <div style={styles.layout}>
+            <style>{`
+                @keyframes modalIn {
+                    from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+            `}</style>
+
             <Sidebar />
             <div style={styles.contenido}>
 
+                {/* Encabezado */}
                 <div style={styles.header}>
                     <div>
                         <h1 style={styles.titulo}>🛒 Compras</h1>
@@ -210,21 +274,42 @@ const Compras = () => {
                             {compras.length} compra{compras.length !== 1 ? 's' : ''} registrada{compras.length !== 1 ? 's' : ''}
                         </p>
                     </div>
-                    <button onClick={() => { setMostrarForm(true); setError(''); }} style={styles.botonNuevo}>
+                    <button onClick={handleNueva} style={styles.botonNuevo}>
                         + Nueva Compra
                     </button>
                 </div>
 
                 {error && <p style={styles.error}>{error}</p>}
 
-                {/* ─── FORMULARIO ─── */}
-                {mostrarForm && (
-                    <div style={styles.formulario}>
-                        <h3 style={styles.formTitulo}>🛒 Registrar Nueva Compra</h3>
+                {/* ─── MODAL ─── */}
+                <Modal isOpen={modalAbierto} onClose={handleCerrarModal}>
+                    {/* Header */}
+                    <div style={styles.modalHeader}>
+                        <div>
+                            <div style={styles.modalIconRow}>
+                                <div style={styles.modalIconCircle}>
+                                    <span style={{ fontSize: '20px' }}>🛒</span>
+                                </div>
+                                <h2 style={styles.modalTitulo}>Nueva Compra</h2>
+                            </div>
+                            <p style={styles.modalSubtitulo}>Completa los datos de la compra</p>
+                        </div>
+                        <button onClick={handleCerrarModal} style={styles.botonCerrar}>✕</button>
+                    </div>
+
+                    {/* Body */}
+                    <div style={styles.modalBody}>
+                        {errorModal && (
+                            <div style={styles.errorModal}>
+                                <span>⚠️</span> {errorModal}
+                            </div>
+                        )}
 
                         {/* Proveedor */}
                         <div style={styles.inputGroup}>
-                            <label style={styles.label}>Proveedor *</label>
+                            <label style={styles.label}>
+                                Proveedor <span style={styles.requerido}>*</span>
+                            </label>
                             <select value={idProveedor} onChange={e => setIdProveedor(e.target.value)} style={styles.select}>
                                 <option value="">-- Selecciona un proveedor --</option>
                                 {proveedores.map(p => (
@@ -240,14 +325,12 @@ const Compras = () => {
                             <p style={styles.seccionTitulo}>📦 Productos a comprar</p>
 
                             {items.map((item, i) => {
-                                const prod = getProductoSeleccionado(item.id_producto);
                                 const totalUnidades = calcularTotalUnidades(item);
                                 const subtotal = calcularSubtotalItem(item);
                                 const tallasDelGrupo = getTallasDelGrupo(item);
 
                                 return (
                                     <div key={i} style={styles.itemCard}>
-
                                         {/* Header del item */}
                                         <div style={styles.itemHeader}>
                                             <div style={{ flex: 2 }}>
@@ -280,10 +363,9 @@ const Compras = () => {
                                             </button>
                                         </div>
 
-                                        {/* Solo mostrar tallas si hay producto */}
                                         {item.id_producto ? (
                                             <>
-                                                {/* Selector de grupo de talla */}
+                                                {/* Selector grupo talla */}
                                                 <div style={styles.grupoTallaSeccion}>
                                                     <p style={styles.grupoTallaTitulo}>📐 Tipo de talla</p>
                                                     <div style={styles.grupoTallaRow}>
@@ -304,7 +386,7 @@ const Compras = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* Grid de chips de tallas */}
+                                                {/* Grid de tallas */}
                                                 {item.grupoTalla && (
                                                     <div style={styles.tallasSeccion}>
                                                         <p style={styles.tallasSubTitulo}>
@@ -323,10 +405,7 @@ const Compras = () => {
                                                                         borderColor: seleccionada ? '#2e7d52' : stockBajo ? '#e65100' : '#e0ede6',
                                                                         backgroundColor: seleccionada ? '#f0faf4' : stockBajo ? '#fff8f0' : 'white',
                                                                     }}>
-                                                                        {/* Nombre talla */}
                                                                         <div style={styles.tallaNombre}>{talla}</div>
-
-                                                                        {/* Stock actual */}
                                                                         <div style={styles.tallaStockActual}>
                                                                             <span style={styles.tallaStockLabel}>Stock actual</span>
                                                                             <span style={{
@@ -337,8 +416,6 @@ const Compras = () => {
                                                                                 {stockBajo && <span style={styles.alertaIcon}> ⚠️</span>}
                                                                             </span>
                                                                         </div>
-
-                                                                        {/* Input cantidad a comprar */}
                                                                         <div style={styles.tallaInputContainer}>
                                                                             <label style={styles.tallaInputLabel}>A comprar</label>
                                                                             <input
@@ -353,8 +430,6 @@ const Compras = () => {
                                                                                 }}
                                                                             />
                                                                         </div>
-
-                                                                        {/* Stock nuevo */}
                                                                         {cantidadComprar > 0 && (
                                                                             <div style={styles.tallaStockNuevo}>
                                                                                 {stockActual} → <strong>{stockNuevo}</strong>
@@ -367,7 +442,6 @@ const Compras = () => {
                                                     </div>
                                                 )}
 
-                                                {/* Resumen del item */}
                                                 {totalUnidades > 0 && (
                                                     <div style={styles.itemResumen}>
                                                         <span style={styles.itemResumenTexto}>
@@ -405,7 +479,7 @@ const Compras = () => {
                             </span>
                         </div>
 
-                        {/* Total general */}
+                        {/* Total */}
                         <div style={styles.totalBox}>
                             <div>
                                 <p style={styles.totalLabel}>TOTAL DE LA COMPRA</p>
@@ -415,20 +489,18 @@ const Compras = () => {
                             </div>
                             <span style={styles.totalValor}>${calcularTotal().toLocaleString()}</span>
                         </div>
-
-                        <div style={styles.formBotones}>
-                            <button onClick={handleGuardar} style={styles.botonGuardar}>
-                                💾 Registrar Compra
-                            </button>
-                            <button onClick={() => {
-                                setMostrarForm(false);
-                                setItems([{ id_producto: '', precio_unitario: '', grupoTalla: '', tallas: {} }]);
-                            }} style={styles.botonCancelar}>
-                                Cancelar
-                            </button>
-                        </div>
                     </div>
-                )}
+
+                    {/* Footer */}
+                    <div style={styles.modalFooter}>
+                        <button onClick={handleCerrarModal} style={styles.botonCancelar}>
+                            Cancelar
+                        </button>
+                        <button onClick={handleGuardar} style={styles.botonGuardar}>
+                            💾 Registrar Compra
+                        </button>
+                    </div>
+                </Modal>
 
                 {/* ─── LISTA DE COMPRAS ─── */}
                 {cargando ? (
@@ -477,7 +549,7 @@ const Compras = () => {
                                                     <thead>
                                                         <tr style={styles.tablaHeader}>
                                                             <th style={styles.th}>Producto</th>
-                                                            
+                            
                                                             <th style={styles.th}>Cantidad</th>
                                                             <th style={styles.th}>Precio Unit.</th>
                                                             <th style={styles.th}>Subtotal</th>
@@ -487,7 +559,6 @@ const Compras = () => {
                                                         {detalles.detalles?.map(d => (
                                                             <tr key={d.id_detalle} style={styles.tablaFila}>
                                                                 <td style={styles.td}>{getNombreProducto(d.id_producto)}</td>
-                                                                
                                                                 <td style={styles.td}>{d.cantidad} uds</td>
                                                                 <td style={styles.td}>${Number(d.precio_unitario).toLocaleString()}</td>
                                                                 <td style={styles.td}>${Number(d.subtotal).toLocaleString()}</td>
@@ -517,29 +588,42 @@ const styles = {
     botonNuevo: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' },
     error: { color: '#e53935', backgroundColor: '#fdecea', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
 
-    formulario: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 2px 15px rgba(0,0,0,0.06)' },
-    formTitulo: { color: '#2e7d52', marginBottom: '20px', marginTop: 0 },
-    inputGroup: { marginBottom: '20px' },
+    // Modal interior
+    modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '24px 28px 0 28px' },
+    modalIconRow: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' },
+    modalIconCircle: { width: '42px', height: '42px', borderRadius: '12px', backgroundColor: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    modalTitulo: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
+    modalSubtitulo: { fontSize: '13px', color: '#888', margin: '2px 0 0 54px' },
+    botonCerrar: { background: 'none', border: 'none', fontSize: '18px', color: '#aaa', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', lineHeight: 1, flexShrink: 0 },
+
+    modalBody: { padding: '20px 28px' },
+    errorModal: { display: 'flex', gap: '8px', alignItems: 'center', color: '#e53935', backgroundColor: '#fdecea', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' },
+
+    modalFooter: { display: 'flex', gap: '10px', justifyContent: 'flex-end', padding: '16px 28px 24px 28px', borderTop: '1px solid #f0f0f0' },
+    botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 22px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' },
+    botonCancelar: { backgroundColor: 'white', color: '#666', border: '1.5px solid #ddd', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
+
+    // Form dentro del modal
+    inputGroup: { marginBottom: '16px' },
     label: { fontSize: '13px', color: '#555', fontWeight: '600', display: 'block', marginBottom: '6px' },
+    requerido: { color: '#e53935' },
     labelSmall: { fontSize: '12px', color: '#777', fontWeight: '600', display: 'block', marginBottom: '4px' },
     select: { padding: '10px 14px', border: '1.5px solid #e0ede6', borderRadius: '8px', fontSize: '14px', outline: 'none', backgroundColor: 'white', width: '100%' },
     input: { padding: '10px 14px', border: '1.5px solid #e0ede6', borderRadius: '8px', fontSize: '14px', outline: 'none', width: '100%', boxSizing: 'border-box' },
 
-    itemsContainer: { marginBottom: '20px' },
-    seccionTitulo: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', marginBottom: '15px', marginTop: 0 },
+    itemsContainer: { marginBottom: '16px' },
+    seccionTitulo: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', marginBottom: '12px', marginTop: 0 },
 
-    itemCard: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '12px', padding: '18px', marginBottom: '16px' },
-    itemHeader: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '16px' },
+    itemCard: { backgroundColor: '#f8fffe', border: '1.5px solid #e0ede6', borderRadius: '12px', padding: '16px', marginBottom: '12px' },
+    itemHeader: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '14px' },
     botonQuitar: { backgroundColor: '#fdecea', color: '#e53935', border: 'none', width: '36px', height: '36px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', flexShrink: 0 },
 
-    // Selector de grupo de talla
-    grupoTallaSeccion: { marginBottom: '14px' },
+    grupoTallaSeccion: { marginBottom: '12px' },
     grupoTallaTitulo: { fontSize: '12px', fontWeight: '700', color: '#555', margin: '0 0 8px 0' },
     grupoTallaRow: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
     grupoTallaBtn: { padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', transition: 'all 0.15s' },
 
-    // Grid de chips de tallas
-    tallasSeccion: { marginBottom: '12px' },
+    tallasSeccion: { marginBottom: '10px' },
     tallasSubTitulo: { fontSize: '12px', fontWeight: '700', color: '#555', margin: '0 0 10px 0' },
     tallasGrid: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
     tallaCard: { border: '2px solid #e0ede6', borderRadius: '10px', padding: '10px 12px', minWidth: '90px', backgroundColor: 'white', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'center' },
@@ -553,26 +637,23 @@ const styles = {
     tallaInput: { width: '68px', padding: '5px 8px', border: '1.5px solid #ccc', borderRadius: '6px', fontSize: '14px', textAlign: 'center', outline: 'none' },
     tallaStockNuevo: { fontSize: '11px', color: '#1565c0', textAlign: 'center', backgroundColor: '#e3f2fd', borderRadius: '4px', padding: '2px 6px' },
 
-    seleccionaProducto: { color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '20px', fontStyle: 'italic' },
+    seleccionaProducto: { color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '16px', fontStyle: 'italic' },
     itemResumen: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', borderRadius: '8px', padding: '10px 14px' },
     itemResumenTexto: { fontSize: '13px', color: '#555' },
     itemResumenSubtotal: { fontSize: '14px', color: '#2e7d52' },
 
-    leyenda: { display: 'flex', gap: '20px', marginBottom: '16px', flexWrap: 'wrap' },
+    leyenda: { display: 'flex', gap: '20px', marginBottom: '14px', flexWrap: 'wrap' },
     leyendaItem: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#666' },
     leyendaDot: { width: '20px', height: '20px', borderRadius: '4px', display: 'inline-block', flexShrink: 0 },
 
     botonAgregar: { backgroundColor: 'transparent', color: '#2e7d52', border: '1.5px dashed #2e7d52', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', width: '100%' },
 
-    totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '18px 24px', borderRadius: '10px', marginBottom: '20px' },
+    totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#e8f5ee', padding: '16px 20px', borderRadius: '10px', marginBottom: '4px' },
     totalLabel: { fontSize: '14px', fontWeight: '700', color: '#2e7d52', margin: 0 },
     totalDetalle: { fontSize: '12px', color: '#888', margin: '4px 0 0 0' },
     totalValor: { fontSize: '26px', fontWeight: 'bold', color: '#2e7d52' },
 
-    formBotones: { display: 'flex', gap: '10px' },
-    botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' },
-    botonCancelar: { backgroundColor: 'white', color: '#666', border: '1px solid #ddd', padding: '12px 24px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
-
+    // Lista compras
     listaCompras: { display: 'flex', flexDirection: 'column', gap: '12px' },
     compraCard: { backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', overflow: 'hidden' },
     compraFila: { display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 20px' },
@@ -591,7 +672,6 @@ const styles = {
     th: { padding: '10px 14px', textAlign: 'left', fontSize: '12px', color: '#555', fontWeight: '600' },
     tablaFila: { borderTop: '1px solid #f0f4f0' },
     td: { padding: '10px 14px', fontSize: '13px', color: '#333' },
-    tallaPill: { backgroundColor: '#e8f5ee', color: '#2e7d52', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' },
     sinDatos: { backgroundColor: 'white', borderRadius: '12px', padding: '50px', textAlign: 'center', color: '#999' },
 };
 
