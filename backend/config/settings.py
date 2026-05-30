@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'pagos',
     'dashboard',
     'ventas',
+    'Cambios',
 ]
 
 MIDDLEWARE = [
