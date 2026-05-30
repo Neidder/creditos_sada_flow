@@ -133,14 +133,6 @@ def resumen_dashboard(request):
     for p in Pagos.objects.filter(fecha_pago__gte=hace_30_dias):
         metodo = p.metodo_pago or 'otro'
         metodos[metodo] = metodos.get(metodo, 0) + float(p.monto or 0)
-# =================================================================
-    # ➕ NUEVA INYECCIÓN GERENCIAL: VALORIZACIÓN REAL DE INVENTARIO
-    # =================================================================
-    todos_los_productos = Productos.objects.all()
-    total_prendas_fisicas = todos_los_productos.aggregate(total_stock=Sum('stock'))['total_stock'] or 0
-    
-    # Multiplicación iterativa segura de stock * costo_promedio según tu esquema de BD
-    capital_total_bodega = sum(float(p.costo_promedio or 0) * int(p.stock or 0) for p in todos_los_productos)
 
     return Response({
         'generales': {
@@ -154,9 +146,6 @@ def resumen_dashboard(request):
             'compras_mes': total_compras_mes,
             'saldo_pendiente': saldo_pendiente,
             'creditos_vencidos': creditos_vencidos,
-            # Campos agregados para organización gerencial:
-            'capital_inventario_costo': capital_total_bodega,
-            'prendas_totales_bodega': total_prendas_fisicas
         },
         'resumen_ventas': {
             'hoy': {
