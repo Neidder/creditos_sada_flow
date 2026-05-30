@@ -2,9 +2,26 @@ import api from './axios';
 
 export const login = async (correo, contrasena) => {
     const response = await api.post('/usuarios/login/', { correo, contrasena });
-    return response.data;
+    const data = response.data;
+
+    // Guarda tokens separados del objeto usuario
+    localStorage.setItem('access_token', data.access);
+    localStorage.setItem('refresh_token', data.refresh);
+
+    // Guarda info del usuario sin los tokens
+    const usuario = {
+        id_usuario: data.id_usuario,
+        nombre: data.nombre,
+        apellido: data.apellido,
+        correo: data.correo,
+        id_rol: data.id_rol,
+    };
+    localStorage.setItem('usuario', JSON.stringify(usuario));
+
+    return usuario;
 };
 
+// El resto de funciones no cambia
 export const getUsuarios = async () => {
     const response = await api.get('/usuarios/usuarios/');
     return response.data;

@@ -9,7 +9,6 @@ const METODO_ICONS = { efectivo: '💵', transferencia: '🏦', tarjeta: '💳' 
 
 const formInicial = { id_credito: '', monto: '', metodo_pago: 'efectivo' };
 
-// Normalizamos a mayúsculas para evitar inconsistencias de la API
 const esVencido = (c) => c.estado?.toUpperCase() === 'ACTIVO' && new Date(c.fecha_fin) < new Date();
 const getEstadoCredito = (c) => esVencido(c) ? 'VENCIDO' : c.estado?.toUpperCase();
 
@@ -89,7 +88,6 @@ const Pagos = () => {
         return cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : `Cliente #${credito.id_cliente}`;
     };
 
-    // Filtro tolerante a mayúsculas/minúsculas de la API (Soporta PENDIENTE o ACTIVO con saldo)
     const creditosConSaldo = creditos.filter(c =>
         (c.estado?.toUpperCase() === 'PENDIENTE' || c.estado?.toUpperCase() === 'ACTIVO') && parseFloat(c.saldo_pendiente) > 0
     );
@@ -171,73 +169,82 @@ const Pagos = () => {
                 </div>
 
                 {exito && <p style={styles.exito}>{exito}</p>}
-                {error && <p style={styles.error}>{error}</p>}
+                
+                {/* NOTA: Removí el error de aquí arriba para renderizarlo directamente dentro de la ventana emergente */}
 
-                {/* Formulario */}
+                {/* VENTANA EMERGENTE (MODAL) */}
                 {mostrarForm && (
-                    <div style={styles.formulario}>
-                        <h3 style={styles.formTitulo}>💰 Registrar Pago</h3>
-                        <div style={styles.formGrid}>
-                            <div style={styles.inputGroup}>
-                                <label style={styles.label}>Crédito *</label>
-                                <select name="id_credito" value={form.id_credito} onChange={handleChange} style={styles.select}>
-                                    <option value="">-- Selecciona un crédito --</option>
-                                    {creditosConSaldo.map(c => {
-                                        const cliente = clientes.find(cl => cl.id_cliente === c.id_cliente);
-                                        return (
-                                            <option key={c.id_credito} value={c.id_credito}>
-                                                Crédito #{c.id_credito} — {cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : 'Cliente'} — Saldo: ${Number(c.saldo_pendiente).toLocaleString()}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
+                    <div style={styles.modalOverlay} onClick={() => { setMostrarForm(false); setForm(formInicial); }}>
+                        <div style={styles.formularioModal} onClick={(e) => e.stopPropagation()}>
+                            <div style={styles.modalHeader}>
+                                <h3 style={styles.formTitulo}>💰 Registrar Pago</h3>
+                                <button style={styles.botonCerrarX} onClick={() => { setMostrarForm(false); setForm(formInicial); }}>×</button>
                             </div>
+                            
+                            {error && <p style={styles.error}>{error}</p>}
 
-                            <div style={styles.inputGroup}>
-                                <label style={styles.label}>Método de Pago *</label>
-                                <select name="metodo_pago" value={form.metodo_pago} onChange={handleChange} style={styles.select}>
-                                    {METODOS.map(m => (
-                                        <option key={m} value={m}>{METODO_ICONS[m]} {m}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
-                                <label style={styles.label}>Monto *</label>
-                                <input
-                                    name="monto" type="number" min="0"
-                                    placeholder="Ej: 50000"
-                                    value={form.monto}
-                                    onChange={handleChange}
-                                    style={styles.input}
-                                />
-                            </div>
-
-                            {/* Info del crédito seleccionado */}
-                            {creditoSeleccionado && (
-                                <div style={styles.infoBox}>
-                                    <p style={styles.infoTitulo}>📋 Info del crédito</p>
-                                    <div style={styles.infoGrid}>
-                                        <span style={styles.infoLabel}>Total:</span>
-                                        <span style={styles.infoValor}>${Number(creditoSeleccionado.valor_total).toLocaleString()}</span>
-                                        <span style={styles.infoLabel}>Saldo pendiente:</span>
-                                        <span style={{ ...styles.infoValor, color: '#e65100', fontWeight: 'bold' }}>
-                                            ${Number(creditoSeleccionado.saldo_pendiente).toLocaleString()}
-                                        </span>
-                                        <span style={styles.infoLabel}>Vence:</span>
-                                        <span style={styles.infoValor}>
-                                            {creditoSeleccionado.fecha_limite
-                                                ? new Date(creditoSeleccionado.fecha_limite + 'T00:00:00').toLocaleDateString('es-CO')
-                                                : '—'}
-                                        </span>
-                                    </div>
+                            <div style={styles.formGrid}>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Crédito *</label>
+                                    <select name="id_credito" value={form.id_credito} onChange={handleChange} style={styles.select}>
+                                        <option value="">-- Selecciona un crédito --</option>
+                                        {creditosConSaldo.map(c => {
+                                            const cliente = clientes.find(cl => cl.id_cliente === c.id_cliente);
+                                            return (
+                                                <option key={c.id_credito} value={c.id_credito}>
+                                                    Crédito #{c.id_credito} — {cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : 'Cliente'} — Saldo: ${Number(c.saldo_pendiente).toLocaleString()}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
                                 </div>
-                            )}
-                        </div>
 
-                        <div style={styles.formBotones}>
-                            <button onClick={handleGuardar} style={styles.botonGuardar}>💾 Registrar Pago</button>
-                            <button onClick={() => { setMostrarForm(false); setForm(formInicial); }} style={styles.botonCancelar}>Cancelar</button>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Método de Pago *</label>
+                                    <select name="metodo_pago" value={form.metodo_pago} onChange={handleChange} style={styles.select}>
+                                        {METODOS.map(m => (
+                                            <option key={m} value={m}>{METODO_ICONS[m]} {m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
+                                    <label style={styles.label}>Monto *</label>
+                                    <input
+                                        name="monto" type="number" min="0"
+                                        placeholder="Ej: 50000"
+                                        value={form.monto}
+                                        onChange={handleChange}
+                                        style={styles.input}
+                                    />
+                                </div>
+
+                                {/* Info del crédito seleccionado */}
+                                {creditoSeleccionado && (
+                                    <div style={styles.infoBox}>
+                                        <p style={styles.infoTitulo}>📋 Info del crédito</p>
+                                        <div style={styles.infoGrid}>
+                                            <span style={styles.infoLabel}>Total:</span>
+                                            <span style={styles.infoValor}>${Number(creditoSeleccionado.valor_total).toLocaleString()}</span>
+                                            <span style={styles.infoLabel}>Saldo pendiente:</span>
+                                            <span style={{ ...styles.infoValor, color: '#e65100', fontWeight: 'bold' }}>
+                                                ${Number(creditoSeleccionado.saldo_pendiente).toLocaleString()}
+                                            </span>
+                                            <span style={styles.infoLabel}>Vence:</span>
+                                            <span style={styles.infoValor}>
+                                                {creditoSeleccionado.fecha_limite
+                                                    ? new Date(creditoSeleccionado.fecha_limite + 'T00:00:00').toLocaleDateString('es-CO')
+                                                    : '—'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={styles.formBotones}>
+                                <button onClick={handleGuardar} style={styles.botonGuardar}>💾 Registrar Pago</button>
+                                <button onClick={() => { setMostrarForm(false); setForm(formInicial); }} style={styles.botonCancelar}>Cancelar</button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -300,10 +307,51 @@ const styles = {
     buscador: { border: 'none', outline: 'none', padding: '11px 0', fontSize: '14px', width: '100%' },
     filtrosBotones: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
     filtroBton: { border: '1.5px solid #e0ede6', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
-    exito: { color: '#2e7d52', backgroundColor: '#e8f5ee', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
+    exito: { color: '#2e7d52', backgroundColor: '#e8f5ee', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px', width: '100%', boxSizing: 'border-box' },
     error: { color: '#e53935', backgroundColor: '#fdecea', padding: '10px 15px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' },
-    formulario: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 2px 15px rgba(0,0,0,0.06)' },
-    formTitulo: { color: '#2e7d52', marginBottom: '20px', marginTop: 0 },
+    
+    // --- NUEVOS ESTILOS PARA LA VENTANA EMERGENTE (MODAL) ---
+    modalOverlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+        padding: '20px'
+    },
+    formularioModal: {
+        backgroundColor: 'white',
+        padding: '25px',
+        borderRadius: '12px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+        width: '100%',
+        maxWidth: '600px',
+        boxSizing: 'border-box',
+        maxHeight: '90vh',
+        overflowY: 'auto'
+    },
+    modalHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px'
+    },
+    botonCerrarX: {
+        background: 'none',
+        border: 'none',
+        fontSize: '24px',
+        color: '#999',
+        cursor: 'pointer',
+        lineHeight: '1'
+    },
+    // --------------------------------------------------------
+
+    formTitulo: { color: '#2e7d52', margin: 0 },
     formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' },
     inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
     label: { fontSize: '13px', color: '#555', fontWeight: '600' },
@@ -314,7 +362,7 @@ const styles = {
     infoGrid: { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', alignItems: 'center' },
     infoLabel: { fontSize: '12px', color: '#888' },
     infoValor: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
-    formBotones: { display: 'flex', gap: '10px' },
+    formBotones: { display: 'flex', gap: '10px', justifyContent: 'flex-end' },
     botonGuardar: { backgroundColor: '#2e7d52', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
     botonCancelar: { backgroundColor: 'white', color: '#666', border: '1px solid #ddd', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer' },
     lista: { display: 'flex', flexDirection: 'column', gap: '10px' },
