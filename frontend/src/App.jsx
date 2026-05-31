@@ -5,12 +5,14 @@ import Productos from './pages/Productos';
 import Clientes from './pages/Clientes';
 import Proveedores from './pages/Proveedores';
 import Compras from './pages/Compras';
+import CajaDiaria from './pages/CajaDiaria';
 import Creditos from './pages/Creditos';
 import Pagos from './pages/Pagos';
 import Cambios from './pages/Cambios';
 import Ventas from './pages/Ventas';
 import Usuarios from './pages/Usuarios'; // 1. Importamos la nueva página de Usuarios
 import ProtectedRoute from './components/ProtectedRoute';
+
 
 function App() {
     return (
@@ -46,7 +48,10 @@ function App() {
                     <ProtectedRoute allowedRoles={[1, 2]}><Cambios /></ProtectedRoute>
                 } />
 
-                
+                <Route path="/caja" element={
+                    <ProtectedRoute allowedRoles={[1, 2]}><CajaDiaria /></ProtectedRoute>
+                } />
+
 
                 {/* =========================================================
                     RUTAS EXCLUSIVAS (Solo Administrador (1))

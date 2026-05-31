@@ -35,6 +35,7 @@ const Navbar = () => {
                 <Link to="/pagos" style={styles.link}>Pagos</Link>
                 <Link to="/creditos" style={styles.link}>Créditos</Link>
                 <Link to="/cambios" style={styles.link}>Cambios</Link>
+                <Link to="/caja" style={styles.link}>Caja diaria</Link>
             </div>
             <div style={styles.user}>
                 <span style={styles.userName}>

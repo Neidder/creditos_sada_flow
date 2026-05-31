@@ -33,3 +33,8 @@ export const eliminarProducto = async (id_producto) => {
     const response = await api.delete(`/productos/productos/${id_producto}/`);
     return response.data;
 };
+
+export const getAlertasStock = async () => {
+    const response = await api.get('/productos/productos/alertas_stock/');
+    return response.data;
+};
