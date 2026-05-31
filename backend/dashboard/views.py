@@ -1,9 +1,10 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db.models import Sum, Count
 from django.db.models.functions import TruncDay
-from datetime import timedelta
+from datetime import timedelta, datetime, date as date_type
 
 from clientes.models import Clientes
 from productos.models import Productos
@@ -11,48 +12,29 @@ from proveedores.models import Proveedores
 from compras.models import Compras
 from creditos.models import Creditos
 from pagos.models import Pagos
-from ventas.models import Ventas  # Ajusta la ruta a tu modelo de Ventas
+from ventas.models import Ventas
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def resumen_dashboard(request):
-
     hoy = timezone.now()
-
-    # Rangos de fechas para filtros
-    inicio_hoy = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_hoy    = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
     inicio_semana = hoy - timedelta(days=7)
-    inicio_mes = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    hace_30_dias = hoy - timedelta(days=30)
+    inicio_mes    = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    hace_30_dias  = hoy - timedelta(days=30)
 
-    # ─────────────────────────────
-    # CONTEOS GENERALES
-    # ─────────────────────────────
-    total_clientes = Clientes.objects.count()
-    total_productos = Productos.objects.count()
+    total_clientes    = Clientes.objects.count()
+    total_productos   = Productos.objects.count()
     total_proveedores = Proveedores.objects.count()
 
-    # ─────────────────────────────
-    # VENTAS REALES (RESUMEN TARJETAS)
-    # ─────────────────────────────
-    resumen_hoy = Ventas.objects.filter(fecha_venta__gte=inicio_hoy).aggregate(
-        cantidad=Count('id_venta'), total=Sum('total')
-    )
-    resumen_semana = Ventas.objects.filter(fecha_venta__gte=inicio_semana).aggregate(
-        cantidad=Count('id_venta'), total=Sum('total')
-    )
-    resumen_mes = Ventas.objects.filter(fecha_venta__gte=inicio_mes).aggregate(
-        cantidad=Count('id_venta'), total=Sum('total')
-    )
+    resumen_hoy    = Ventas.objects.filter(fecha_venta__gte=inicio_hoy).aggregate(cantidad=Count('id_venta'), total=Sum('total'))
+    resumen_semana = Ventas.objects.filter(fecha_venta__gte=inicio_semana).aggregate(cantidad=Count('id_venta'), total=Sum('total'))
+    resumen_mes    = Ventas.objects.filter(fecha_venta__gte=inicio_mes).aggregate(cantidad=Count('id_venta'), total=Sum('total'))
 
-    # ─────────────────────────────
-    # VENTAS DIARIAS REALES (PARA EL GRÁFICO RECHARTS)
-    # ─────────────────────────────
     ventas_agrupadas_mes = Ventas.objects.filter(
         fecha_venta__gte=inicio_mes
-    ).annotate(
-        dia_del_mes=TruncDay('fecha_venta')
-    ).values('dia_del_mes').annotate(
+    ).annotate(dia_del_mes=TruncDay('fecha_venta')).values('dia_del_mes').annotate(
         total_dia=Sum('total')
     ).order_by('dia_del_mes')
 
@@ -60,110 +42,153 @@ def resumen_dashboard(request):
     for item in ventas_agrupadas_mes:
         if item['dia_del_mes']:
             ventas_diarias_json.append({
-                'dia': item['dia_del_mes'].strftime('%d'),  # Ejemplo: '01', '02'
+                'dia': item['dia_del_mes'].strftime('%d'),
                 'total': float(item['total_dia'] or 0)
             })
 
-    # ─────────────────────────────
-    # CREDITOS
-    # ─────────────────────────────
-    creditos_activos = Creditos.objects.filter(estado='PENDIENTE').count()
-    creditos_vencidos = Creditos.objects.filter(
-        estado='PENDIENTE',
-        fecha_limite__lt=hoy.date()
-    ).count()
+    creditos_activos  = Creditos.objects.filter(estado='PENDIENTE').count()
+    creditos_vencidos = Creditos.objects.filter(estado='PENDIENTE', fecha_limite__lt=hoy.date()).count()
+    saldo_pendiente   = float(Creditos.objects.filter(estado='PENDIENTE').aggregate(total_saldo=Sum('saldo_pendiente'))['total_saldo'] or 0)
 
-    resumen_saldo = Creditos.objects.filter(estado='PENDIENTE').aggregate(total_saldo=Sum('saldo_pendiente'))
-    saldo_pendiente = float(resumen_saldo['total_saldo'] or 0)
+    total_recaudado_mes = float(Pagos.objects.filter(fecha_pago__gte=inicio_mes).aggregate(total_monto=Sum('monto'))['total_monto'] or 0)
+    total_compras_mes   = float(Compras.objects.filter(fecha_compra__gte=inicio_mes).aggregate(total_compras=Sum('total'))['total_compras'] or 0)
 
-    # ─────────────────────────────
-    # PAGOS DEL MES
-    # ─────────────────────────────
-    resumen_pagos = Pagos.objects.filter(fecha_pago__gte=inicio_mes).aggregate(total_monto=Sum('monto'))
-    total_recaudado_mes = float(resumen_pagos['total_monto'] or 0)
+    productos_stock_bajo = Productos.objects.filter(stock__lt=5).values('nombre', 'stock').order_by('stock')[:5]
 
-    # ─────────────────────────────
-    # COMPRAS DEL MES
-    # ─────────────────────────────
-    resumen_compras = Compras.objects.filter(fecha_compra__gte=inicio_mes).aggregate(total_compras=Sum('total'))
-    total_compras_mes = float(resumen_compras['total_compras'] or 0)
-
-    # ─────────────────────────────
-    # PRODUCTOS STOCK BAJO
-    # ─────────────────────────────
-    productos_stock_bajo = Productos.objects.filter(
-        stock__lt=5
-    ).values('nombre', 'stock').order_by('stock')[:5]
-
-    # ─────────────────────────────
-    # ÚLTIMAS COMPRAS
-    # ─────────────────────────────
     ultimas_compras = []
-    for c in Compras.objects.order_by('-fecha_compra')[:5]:
+    for c in Compras.objects.select_related('id_proveedor').order_by('-fecha_compra')[:5]:
         ultimas_compras.append({
-            'id': c.id_compra,
+            'id':        c.id_compra,
             'proveedor': c.id_proveedor.nombre_empresa if c.id_proveedor else '—',
-            'total': float(c.total or 0),
-            'fecha': c.fecha_compra.strftime('%d/%m/%Y') if c.fecha_compra else '—',
+            'total':     float(c.total or 0),
+            'fecha':     c.fecha_compra.strftime('%d/%m/%Y') if c.fecha_compra else '—',
         })
 
-    # ─────────────────────────────
-    # ÚLTIMOS PAGOS
-    # ─────────────────────────────
     ultimos_pagos = []
-    for p in Pagos.objects.order_by('-fecha_pago')[:5]:
+    for p in Pagos.objects.select_related('id_credito__id_cliente').order_by('-fecha_pago')[:5]:
         try:
             cliente = p.id_credito.id_cliente
             nombre_cliente = f'{cliente.nombre} {cliente.apellido or ""}'.strip()
         except Exception:
             nombre_cliente = '—'
-
         ultimos_pagos.append({
-            'id': p.id_pago,
+            'id':      p.id_pago,
             'cliente': nombre_cliente,
-            'monto': float(p.monto or 0),
-            'metodo': p.metodo_pago,
-            'fecha': p.fecha_pago.strftime('%d/%m/%Y %H:%M') if p.fecha_pago else '—',
+            'monto':   float(p.monto or 0),
+            'metodo':  p.metodo_pago,
+            'fecha':   p.fecha_pago.strftime('%d/%m/%Y %H:%M') if p.fecha_pago else '—',
         })
 
-    # ─────────────────────────────
-    # PAGOS POR MÉTODO
-    # ─────────────────────────────
     metodos = {}
     for p in Pagos.objects.filter(fecha_pago__gte=hace_30_dias):
         metodo = p.metodo_pago or 'otro'
         metodos[metodo] = metodos.get(metodo, 0) + float(p.monto or 0)
 
+    todos_los_productos    = Productos.objects.all()
+    total_prendas_fisicas  = todos_los_productos.aggregate(total_stock=Sum('stock'))['total_stock'] or 0
+    capital_total_bodega   = sum(float(p.costo_promedio or 0) * int(p.stock or 0) for p in todos_los_productos)
+
     return Response({
         'generales': {
-            'clientes': total_clientes,
-            'productos': total_productos,
-            'proveedores': total_proveedores,
+            'clientes':         total_clientes,
+            'productos':        total_productos,
+            'proveedores':      total_proveedores,
             'creditos_activos': creditos_activos,
         },
         'finanzas': {
-            'recaudado_mes': total_recaudado_mes,
-            'compras_mes': total_compras_mes,
-            'saldo_pendiente': saldo_pendiente,
-            'creditos_vencidos': creditos_vencidos,
+            'recaudado_mes':          total_recaudado_mes,
+            'compras_mes':            total_compras_mes,
+            'saldo_pendiente':        saldo_pendiente,
+            'creditos_vencidos':      creditos_vencidos,
+            'capital_inventario_costo': capital_total_bodega,
+            'prendas_totales_bodega': total_prendas_fisicas,
         },
         'resumen_ventas': {
-            'hoy': {
-                'cantidad': resumen_hoy['cantidad'] or 0,
-                'total': float(resumen_hoy['total'] or 0)
-            },
-            'semana': {
-                'cantidad': resumen_semana['cantidad'] or 0,
-                'total': float(resumen_semana['total'] or 0)
-            },
-            'mes': {
-                'cantidad': resumen_mes['cantidad'] or 0,
-                'total': float(resumen_mes['total'] or 0)
-            }
+            'hoy':    {'cantidad': resumen_hoy['cantidad'] or 0,    'total': float(resumen_hoy['total'] or 0)},
+            'semana': {'cantidad': resumen_semana['cantidad'] or 0, 'total': float(resumen_semana['total'] or 0)},
+            'mes':    {'cantidad': resumen_mes['cantidad'] or 0,    'total': float(resumen_mes['total'] or 0)},
         },
-        'ventas_diarias': ventas_diarias_json,
+        'ventas_diarias':       ventas_diarias_json,
         'productos_stock_bajo': list(productos_stock_bajo),
-        'ultimas_compras': ultimas_compras,
-        'ultimos_pagos': ultimos_pagos,
-        'pagos_por_metodo': metodos,
+        'ultimas_compras':      ultimas_compras,
+        'ultimos_pagos':        ultimos_pagos,
+        'pagos_por_metodo':     metodos,
+    })
+
+
+# ── función separada, al mismo nivel que resumen_dashboard ──
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def caja_diaria(request):
+    fecha_str = request.query_params.get('fecha')
+    try:
+        fecha = date_type.fromisoformat(fecha_str) if fecha_str else date_type.today()
+    except ValueError:
+        return Response({'error': 'Formato de fecha inválido. Usa YYYY-MM-DD'}, status=400)
+
+    inicio = datetime.combine(fecha, datetime.min.time())
+    fin    = datetime.combine(fecha, datetime.max.time())
+
+    ventas_qs = Ventas.objects.filter(fecha_venta__range=(inicio, fin))
+    ventas_por_metodo = {}
+    total_ventas = 0
+    for v in ventas_qs:
+        metodo = v.metodo_pago or 'otro'
+        if metodo not in ventas_por_metodo:
+            ventas_por_metodo[metodo] = {'cantidad': 0, 'total': 0}
+        ventas_por_metodo[metodo]['cantidad'] += 1
+        ventas_por_metodo[metodo]['total']    += float(v.total or 0)
+        total_ventas += float(v.total or 0)
+
+    pagos_qs = Pagos.objects.select_related('id_credito__id_cliente').filter(fecha_pago__range=(inicio, fin))
+    cobros = []
+    total_cobros = 0
+    for p in pagos_qs:
+        try:
+            cliente = p.id_credito.id_cliente
+            nombre  = f'{cliente.nombre} {cliente.apellido or ""}'.strip()
+        except Exception:
+            nombre = '—'
+        cobros.append({'cliente': nombre, 'metodo': p.metodo_pago, 'monto': float(p.monto or 0), 'id_credito': p.id_credito_id})
+        total_cobros += float(p.monto or 0)
+
+    compras_qs = Compras.objects.select_related('id_proveedor').filter(fecha_compra__range=(inicio, fin))
+    compras = []
+    total_compras = 0
+    for c in compras_qs:
+        compras.append({'proveedor': c.id_proveedor.nombre_empresa if c.id_proveedor else '—', 'total': float(c.total or 0), 'id_compra': c.id_compra})
+        total_compras += float(c.total or 0)
+
+    from Cambios.models import Cambios as CambiosModel
+    cambios_qs        = CambiosModel.objects.filter(fecha_cambio__range=(inicio, fin))
+    total_devoluciones = sum(float(c.excedente_pagado or 0) for c in cambios_qs)
+    cantidad_cambios   = cambios_qs.count()
+
+    total_ingresos = total_ventas + total_cobros
+    total_egresos  = total_compras + total_devoluciones
+    neto_caja      = total_ingresos - total_egresos
+
+    return Response({
+        'fecha': str(fecha),
+        'resumen': {
+            'total_ingresos':     round(total_ingresos, 2),
+            'total_egresos':      round(total_egresos, 2),
+            'neto_caja':          round(neto_caja, 2),
+            'total_transacciones': ventas_qs.count() + pagos_qs.count(),
+        },
+        'ventas': {
+            'por_metodo': ventas_por_metodo,
+            'total':      round(total_ventas, 2),
+            'cantidad':   ventas_qs.count(),
+        },
+        'cobros_creditos': {
+            'detalle':  cobros,
+            'total':    round(total_cobros, 2),
+            'cantidad': pagos_qs.count(),
+        },
+        'egresos': {
+            'compras':      {'detalle': compras, 'total': round(total_compras, 2), 'cantidad': compras_qs.count()},
+            'devoluciones': {'total': round(total_devoluciones, 2), 'cantidad': cantidad_cambios},
+        },
     })

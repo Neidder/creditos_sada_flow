@@ -160,3 +160,41 @@ class KardexViewSet(viewsets.ModelViewSet):
         ).order_by('-fecha_movimiento')
         serializer = self.get_serializer(kardex, many=True)
         return Response(serializer.data)
+    
+    
+    @action(detail=False, methods=['get'])
+    def alertas_stock(self, request):
+        LIMITE = 5  # menos de 5 unidades por talla = alerta
+        
+        productos = Productos.objects.filter(activo=True).prefetch_related('tallas')
+        alertas = []
+
+        for p in productos:
+            tallas_bajas = []
+            tallas_sin_stock = []
+
+            for t in p.tallas.all():
+                if t.cantidad == 0:
+                    tallas_sin_stock.append({'talla': t.talla, 'cantidad': 0})
+                elif t.cantidad < LIMITE:
+                    tallas_bajas.append({'talla': t.talla, 'cantidad': t.cantidad})
+
+            if tallas_bajas or tallas_sin_stock:
+                alertas.append({
+                    'id_producto':      p.id_producto,
+                    'nombre':           p.nombre,
+                    'stock_total':      p.stock,
+                    'tallas_sin_stock': tallas_sin_stock,
+                    'tallas_bajas':     tallas_bajas,
+                    'nivel':            'critico' if tallas_sin_stock else 'bajo',
+                })
+
+        # Críticos primero, luego por nombre
+        alertas.sort(key=lambda x: (0 if x['nivel'] == 'critico' else 1, x['nombre']))
+
+        return Response({
+            'total_alertas':  len(alertas),
+            'criticos':       sum(1 for a in alertas if a['nivel'] == 'critico'),
+            'stock_bajo':     sum(1 for a in alertas if a['nivel'] == 'bajo'),
+            'productos':      alertas,
+        })
