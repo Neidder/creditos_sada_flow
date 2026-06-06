@@ -162,7 +162,7 @@ class KardexViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='alertas_stock')
     def alertas_stock(self, request):
         LIMITE = 5  # menos de 5 unidades por talla = alerta
         

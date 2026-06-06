@@ -1,6 +1,9 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from datetime import datetime, date as date_type
 from django.utils import timezone
 from django.db import transaction
 from .models import Compras, DetalleCompra
@@ -146,3 +149,102 @@ class CompraViewSet(viewsets.ModelViewSet):
 class DetalleCompraViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DetalleCompra.objects.all()
     serializer_class = DetalleCompraSerializer
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def reporte_compras_proveedores(request):
+    desde_str = request.query_params.get('desde')
+    hasta_str = request.query_params.get('hasta')
+
+    try:
+        desde = date_type.fromisoformat(desde_str) if desde_str else date_type.today().replace(day=1)
+        hasta = date_type.fromisoformat(hasta_str) if hasta_str else date_type.today()
+    except ValueError:
+        return Response({'error': 'Formato inválido. Usa YYYY-MM-DD'}, status=400)
+
+    inicio = datetime.combine(desde, datetime.min.time())
+    fin    = datetime.combine(hasta, datetime.max.time())
+
+    compras = Compras.objects.filter(
+        fecha_compra__range=(inicio, fin)
+    ).select_related('id_proveedor').prefetch_related(
+        'detallecompra_set__id_producto'
+    )
+
+    # Agrupa por proveedor
+    proveedores_map = {}
+
+    for compra in compras:
+        prov = compra.id_proveedor
+        if not prov:
+            continue
+
+        pid = prov.id_proveedor
+        if pid not in proveedores_map:
+            proveedores_map[pid] = {
+                'id_proveedor':   pid,
+                'nombre_empresa': prov.nombre_empresa,
+                'contacto':       prov.contacto or '—',
+                'total_gastado':  0,
+                'total_ordenes':  0,
+                'total_unidades': 0,
+                'productos':      {},  # id_producto → datos acumulados
+            }
+
+        entry = proveedores_map[pid]
+        entry['total_gastado']  += float(compra.total or 0)
+        entry['total_ordenes']  += 1
+
+        for detalle in compra.detallecompra_set.all():
+            prod = detalle.id_producto
+            if not prod:
+                continue
+
+            prod_id = prod.id_producto
+            cantidad = detalle.cantidad or 0
+            subtotal = float(detalle.subtotal or 0)
+
+            entry['total_unidades'] += cantidad
+
+            if prod_id not in entry['productos']:
+                entry['productos'][prod_id] = {
+                    'id_producto': prod_id,
+                    'nombre':      prod.nombre,
+                    'total_unidades': 0,
+                    'total_ordenes':  0,
+                    'subtotal':       0,
+                }
+
+            entry['productos'][prod_id]['total_unidades'] += cantidad
+            entry['productos'][prod_id]['total_ordenes']  += 1
+            entry['productos'][prod_id]['subtotal']       += subtotal
+
+    # Convierte a lista y ordena por gasto descendente
+    total_global = sum(p['total_gastado'] for p in proveedores_map.values())
+
+    resultado = []
+    for p in sorted(proveedores_map.values(), key=lambda x: -x['total_gastado']):
+        productos_lista = sorted(
+            p['productos'].values(),
+            key=lambda x: -x['total_unidades']
+        )
+        resultado.append({
+            'id_proveedor':    p['id_proveedor'],
+            'nombre_empresa':  p['nombre_empresa'],
+            'contacto':        p['contacto'],
+            'total_gastado':   round(p['total_gastado'], 2),
+            'total_ordenes':   p['total_ordenes'],
+            'total_unidades':  p['total_unidades'],
+            'porcentaje':      round((p['total_gastado'] / total_global * 100) if total_global else 0, 1),
+            'productos':       productos_lista,
+        })
+
+    return Response({
+        'desde':             str(desde),
+        'hasta':             str(hasta),
+        'total_global':      round(total_global, 2),
+        'total_ordenes':     sum(p['total_ordenes'] for p in proveedores_map.values()),
+        'total_unidades':    sum(p['total_unidades'] for p in proveedores_map.values()),
+        'total_proveedores': len(resultado),
+        'proveedores':       resultado,
+    })
