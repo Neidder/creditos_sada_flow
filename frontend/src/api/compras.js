@@ -30,3 +30,11 @@ export const getDetallesCompra = async (id_compra) => {
     const response = await api.get(`/compras/compras/${id_compra}/detalles/`);
     return response.data;
 };
+
+export const getReporteProveedores = async (desde, hasta) => {
+    const params = new URLSearchParams();
+    if (desde) params.append('desde', desde);
+    if (hasta) params.append('hasta', hasta);
+    const response = await api.get(`/compras/reporte-proveedores/?${params}`);
+    return response.data;
+};

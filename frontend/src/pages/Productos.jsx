@@ -136,7 +136,7 @@ const Productos = () => {
   // Datos de alertas
   const alertasData = useAlertasStock();
   const idsConAlerta = new Set(
-    alertasData?.productos?.map(a => a.id_producto) || []
+      (alertasData?.productos || []).map(a => a.id_producto)
   );
   const infoAlerta = Object.fromEntries(
     alertasData?.productos?.map(a => [a.id_producto, a]) || []
