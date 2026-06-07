@@ -116,8 +116,6 @@ def resumen_dashboard(request):
     })
 
 
-# ── función separada, al mismo nivel que resumen_dashboard ──
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def caja_diaria(request):
@@ -130,6 +128,7 @@ def caja_diaria(request):
     inicio = datetime.combine(fecha, datetime.min.time())
     fin    = datetime.combine(fecha, datetime.max.time())
 
+    # ── Ventas del día ──
     ventas_qs = Ventas.objects.filter(fecha_venta__range=(inicio, fin))
     ventas_por_metodo = {}
     total_ventas = 0
@@ -141,6 +140,7 @@ def caja_diaria(request):
         ventas_por_metodo[metodo]['total']    += float(v.total or 0)
         total_ventas += float(v.total or 0)
 
+    # ── Cobros de créditos ──
     pagos_qs = Pagos.objects.select_related('id_credito__id_cliente').filter(fecha_pago__range=(inicio, fin))
     cobros = []
     total_cobros = 0
@@ -153,6 +153,7 @@ def caja_diaria(request):
         cobros.append({'cliente': nombre, 'metodo': p.metodo_pago, 'monto': float(p.monto or 0), 'id_credito': p.id_credito_id})
         total_cobros += float(p.monto or 0)
 
+    # ── Compras del día ──
     compras_qs = Compras.objects.select_related('id_proveedor').filter(fecha_compra__range=(inicio, fin))
     compras = []
     total_compras = 0
@@ -160,22 +161,56 @@ def caja_diaria(request):
         compras.append({'proveedor': c.id_proveedor.nombre_empresa if c.id_proveedor else '—', 'total': float(c.total or 0), 'id_compra': c.id_compra})
         total_compras += float(c.total or 0)
 
+    # ── Cambios/Devoluciones del día ──
+    # excedente_pagado ahora puede ser:
+    #   > 0: cliente pagó más, la tienda RECIBIÓ dinero (ingreso por cambio)
+    #   < 0: tienda debe saldo al cliente, la tienda ENTREGÓ dinero (egreso por cambio)
+    #   = 0: cambio directo sin movimiento de dinero
     from Cambios.models import Cambios as CambiosModel
-    cambios_qs        = CambiosModel.objects.filter(fecha_cambio__range=(inicio, fin))
-    total_devoluciones = sum(float(c.excedente_pagado or 0) for c in cambios_qs)
-    cantidad_cambios   = cambios_qs.count()
 
-    total_ingresos = total_ventas + total_cobros
-    total_egresos  = total_compras + total_devoluciones
+    cambios_qs = CambiosModel.objects.filter(fecha_cambio__range=(inicio, fin))
+    cantidad_cambios = cambios_qs.count()
+
+    # Dinero que entra a la tienda por cambios (cliente paga excedente)
+    total_ingresos_cambios = 0.0
+    # Dinero que sale de la tienda por cambios (tienda devuelve saldo a favor)
+    total_egresos_cambios = 0.0
+
+    cambios_detalle = []
+    for c in cambios_qs:
+        excedente = float(c.excedente_pagado or 0)
+        if excedente > 0:
+            total_ingresos_cambios += excedente
+            tipo_cambio = 'ingreso'
+        elif excedente < 0:
+            total_egresos_cambios += abs(excedente)
+            tipo_cambio = 'egreso'
+        else:
+            tipo_cambio = 'neutro'
+
+        cambios_detalle.append({
+            'id_cambio':       c.id_cambio,
+            'total_devolucion': float(c.total_devolucion or 0),
+            'total_nuevo':      float(c.total_nuevo or 0),
+            'excedente_pagado': excedente,
+            'tipo':             tipo_cambio,
+            'metodo_pago':      c.metodo_pago_excedente or '—',
+        })
+
+    # ── Totales consolidados ──
+    # INGRESOS: ventas + cobros de créditos + excedentes de cambios
+    total_ingresos = total_ventas + total_cobros + total_ingresos_cambios
+    # EGRESOS: compras + saldos a favor devueltos en cambios
+    total_egresos  = total_compras + total_egresos_cambios
     neto_caja      = total_ingresos - total_egresos
 
     return Response({
         'fecha': str(fecha),
         'resumen': {
-            'total_ingresos':     round(total_ingresos, 2),
-            'total_egresos':      round(total_egresos, 2),
-            'neto_caja':          round(neto_caja, 2),
-            'total_transacciones': ventas_qs.count() + pagos_qs.count(),
+            'total_ingresos':      round(total_ingresos, 2),
+            'total_egresos':       round(total_egresos, 2),
+            'neto_caja':           round(neto_caja, 2),
+            'total_transacciones': ventas_qs.count() + pagos_qs.count() + cantidad_cambios,
         },
         'ventas': {
             'por_metodo': ventas_por_metodo,
@@ -189,6 +224,18 @@ def caja_diaria(request):
         },
         'egresos': {
             'compras':      {'detalle': compras, 'total': round(total_compras, 2), 'cantidad': compras_qs.count()},
-            'devoluciones': {'total': round(total_devoluciones, 2), 'cantidad': cantidad_cambios},
+            # Devoluciones: lo que la tienda entrega al cliente cuando el cliente devuelve más valor
+            'devoluciones': {
+                'total':    round(total_egresos_cambios, 2),
+                'cantidad': sum(1 for c in cambios_detalle if c['tipo'] == 'egreso'),
+            },
+        },
+        # Nueva sección con el detalle completo de cambios
+        'cambios': {
+            'detalle':             cambios_detalle,
+            'cantidad':            cantidad_cambios,
+            'ingresos_excedentes': round(total_ingresos_cambios, 2),  # cliente pagó más
+            'egresos_saldo_favor': round(total_egresos_cambios, 2),   # tienda devolvió saldo
+            'neto_cambios':        round(total_ingresos_cambios - total_egresos_cambios, 2),
         },
     })

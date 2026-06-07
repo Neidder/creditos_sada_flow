@@ -1,10 +1,11 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 
-from ventas.models import Ventas  
+from ventas.models import Ventas, DetalleVenta
 from creditos.models import Creditos
 from productos.models import Productos, ProductoTalla
 from .models import Cambios, CambioDetallesEntrada, CambioDetallesSalida
@@ -34,14 +35,8 @@ def buscar_origen(request):
                 if venta.id_cliente else "Cliente Ocasional"
             )
 
-            # Intentamos los related_names más comunes
-            try:
-                filas = venta.detalle_venta_set.all()
-            except AttributeError:
-                try:
-                    filas = venta.detalles.all()
-                except AttributeError:
-                    filas = []
+            # DetalleVenta tiene related_name='detalles' según ventas/models.py
+            filas = DetalleVenta.objects.filter(id_venta=venta)
 
             for d in filas:
                 detalles.append({
@@ -63,6 +58,7 @@ def buscar_origen(request):
             })
 
         elif tipo == 'credito':
+            from creditos.models import DetalleCredito
             credito = Creditos.objects.get(id_credito=id_origen)
 
             id_cliente = credito.id_cliente.id_cliente if credito.id_cliente else None
@@ -71,13 +67,8 @@ def buscar_origen(request):
                 if credito.id_cliente else "Cliente Ocasional"
             )
 
-            try:
-                filas = credito.detalle_credito_set.all()
-            except AttributeError:
-                try:
-                    filas = credito.detalles.all()
-                except AttributeError:
-                    filas = []
+            # DetalleCredito tiene related_name='detalles' según creditos/models.py
+            filas = DetalleCredito.objects.filter(id_credito=credito)
 
             for d in filas:
                 detalles.append({
@@ -123,167 +114,196 @@ def buscar_origen(request):
 
 
 @api_view(['POST'])
-@transaction.atomic
 def realizar_cambio(request):
+    """
+    Procesa un cambio/devolución de productos.
+    
+    Lógica financiera:
+    - diferencia = total_nuevo - total_devolucion
+    - diferencia > 0: cliente paga excedente (INGRESO para la tienda)
+    - diferencia < 0: tienda devuelve saldo al cliente (EGRESO para la tienda)
+    - diferencia = 0: cambio directo, sin movimiento de dinero
+    
+    excedente_pagado: lo que el cliente PAGA a la tienda (diferencia > 0)
+    saldo_a_favor:    lo que la tienda DEVUELVE al cliente (abs(diferencia) cuando < 0)
+    """
+    # Usamos with transaction.atomic() dentro del view para que DRF
+    # pueda manejar correctamente los errores y respuestas HTTP
     try:
-        data = request.data
-        id_venta          = data.get('id_venta')
-        id_credito        = data.get('id_credito')
-        id_cliente        = data.get('id_cliente')
-        id_vendedor       = data.get('id_vendedor') # Recibido desde el frontend
-        metodo_excedente  = data.get('metodo_pago_excedente')
-        motivo            = data.get('motivo', '')
+        with transaction.atomic():
+            data = request.data
+            id_venta          = data.get('id_venta')
+            id_credito        = data.get('id_credito')
+            id_cliente        = data.get('id_cliente')
+            id_vendedor       = data.get('id_vendedor')
+            metodo_excedente  = data.get('metodo_pago_excedente')
+            motivo            = data.get('motivo', '')
 
-        productos_devueltos = data.get('productos_devueltos', [])
-        productos_nuevos    = data.get('productos_nuevos', [])
+            productos_devueltos = data.get('productos_devueltos', [])
+            productos_nuevos    = data.get('productos_nuevos', [])
 
-        if not productos_devueltos:
-            return Response(
-                {'error': 'Debe indicar al menos un producto a devolver.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        if not id_vendedor:
-            return Response(
-                {'error': 'El ID del vendedor es obligatorio para registrar la auditoría del cambio.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # ── 1. Calcular totales leyendo precios desde la BD ──
-        total_devolucion = 0.0
-        items_devueltos_enriquecidos = []
-
-        for p in productos_devueltos:
-            prod = get_object_or_404(Productos, id_producto=p['id_producto'])
-            precio = float(prod.precio_venta)
-            cantidad = int(p['cantidad'])
-            total_devolucion += precio * cantidad
-            items_devueltos_enriquecidos.append({
-                **p,
-                'precio_unitario': precio,
-                'cantidad':        cantidad,
-                'obj_producto':    prod,
-            })
-
-        total_nuevo = 0.0
-        items_nuevos_enriquecidos = []
-
-        for p in productos_nuevos:
-            prod = get_object_or_404(Productos, id_producto=p['id_producto'])
-            precio = float(prod.precio_venta)
-            cantidad = int(p['cantidad'])
-            total_nuevo += precio * cantidad
-            items_nuevos_enriquecidos.append({
-                **p,
-                'precio_unitario': precio,
-                'cantidad':        cantidad,
-                'obj_producto':    prod,
-            })
-
-        diferencia = total_nuevo - total_devolucion
-
-        # ── 2. Validaciones de negocio ──
-        if diferencia < 0 and not id_cliente:
-            return Response(
-                {'error': 'No se puede generar saldo a favor para un Cliente Ocasional. '
-                          'Ajusta los artículos nuevos o vincula un cliente real.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if diferencia > 0 and not metodo_excedente:
-            return Response(
-                {'error': 'Debe especificar el método de pago para cobrar el excedente.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # ── 3. Validar stock antes de mutar datos ──
-        for p in items_nuevos_enriquecidos:
-            talla_reg = ProductoTalla.objects.filter(
-                id_producto=p['obj_producto'], talla=p['talla']
-            ).first()
-            if not talla_reg or talla_reg.cantidad < p['cantidad']:
-                raise Exception(
-                    f"Stock insuficiente para '{p['obj_producto'].nombre}' talla [{p['talla']}]. "
-                    f"Disponible: {talla_reg.cantidad if talla_reg else 0}."
+            if not productos_devueltos:
+                return Response(
+                    {'error': 'Debe indicar al menos un producto a devolver.'},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
 
-        # ── 4. Crear cabecera del cambio incluyendo el id_vendedor ──
-        cambio = Cambios.objects.create(
-            id_venta_id          = id_venta if id_venta else None,
-            id_credito_id        = id_credito if id_credito else None,
-            id_vendedor_id       = int(id_vendedor), # Soluciona el error de nulidad
-            total_devolucion     = total_devolucion,
-            total_nuevo          = total_nuevo,
-            excedente_pagado     = max(diferencia, 0),
-            metodo_pago_excedente= metodo_excedente if diferencia > 0 else None,
-            motivo               = motivo,
-        )
+            if not id_vendedor:
+                return Response(
+                    {'error': 'El ID del vendedor es obligatorio para registrar la auditoría del cambio.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # ── 5. Procesar ENTRADAS: sube stock ──
-        for p in items_devueltos_enriquecidos:
-            prod = p['obj_producto']
+            # ── 1. Calcular totales leyendo precios desde la BD ──
+            total_devolucion = 0.0
+            items_devueltos_enriquecidos = []
 
-            prod.stock += p['cantidad']
-            prod.save()
+            for p in productos_devueltos:
+                prod = get_object_or_404(Productos, id_producto=p['id_producto'])
+                precio = float(prod.precio_venta)
+                cantidad = int(p['cantidad'])
+                total_devolucion += precio * cantidad
+                items_devueltos_enriquecidos.append({
+                    **p,
+                    'precio_unitario': precio,
+                    'cantidad':        cantidad,
+                    'obj_producto':    prod,
+                })
 
-            talla_reg = ProductoTalla.objects.filter(
-                id_producto=prod, talla=p['talla']
-            ).first()
-            if talla_reg:
-                talla_reg.cantidad += p['cantidad']
+            total_nuevo = 0.0
+            items_nuevos_enriquecidos = []
+
+            for p in productos_nuevos:
+                prod = get_object_or_404(Productos, id_producto=p['id_producto'])
+                precio = float(prod.precio_venta)
+                cantidad = int(p['cantidad'])
+                total_nuevo += precio * cantidad
+                items_nuevos_enriquecidos.append({
+                    **p,
+                    'precio_unitario': precio,
+                    'cantidad':        cantidad,
+                    'obj_producto':    prod,
+                })
+
+            diferencia = total_nuevo - total_devolucion
+            # diferencia > 0: cliente paga más (excedente)
+            # diferencia < 0: tienda devuelve saldo (saldo a favor del cliente)
+            excedente = max(diferencia, 0)       # cliente paga a tienda
+            saldo_favor = max(-diferencia, 0)    # tienda devuelve a cliente
+
+            # ── 2. Validaciones de negocio ──
+            if diferencia < 0 and not id_cliente:
+                return Response(
+                    {'error': 'No se puede generar saldo a favor para un Cliente Ocasional. '
+                              'Ajusta los artículos nuevos o vincula un cliente real.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if diferencia > 0 and not metodo_excedente:
+                return Response(
+                    {'error': 'Debe especificar el método de pago para cobrar el excedente.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ── 3. Validar stock antes de mutar datos ──
+            for p in items_nuevos_enriquecidos:
+                talla_reg = ProductoTalla.objects.filter(
+                    id_producto=p['obj_producto'], talla=p['talla']
+                ).first()
+                if not talla_reg or talla_reg.cantidad < p['cantidad']:
+                    raise ValueError(
+                        f"Stock insuficiente para '{p['obj_producto'].nombre}' talla [{p['talla']}]. "
+                        f"Disponible: {talla_reg.cantidad if talla_reg else 0}."
+                    )
+
+            # ── 4. Crear cabecera del cambio ──
+            cambio = Cambios.objects.create(
+                id_venta_id           = id_venta if id_venta else None,
+                id_credito_id         = id_credito if id_credito else None,
+                id_vendedor_id        = int(id_vendedor),
+                total_devolucion      = total_devolucion,
+                total_nuevo           = total_nuevo,
+                # excedente_pagado: dinero que entra a la tienda (cliente paga más)
+                # Si diferencia < 0, guardamos el valor negativo para que
+                # caja_diaria pueda calcular correctamente los egresos
+                excedente_pagado      = diferencia,  # puede ser negativo (tienda debe)
+                metodo_pago_excedente = metodo_excedente if diferencia > 0 else None,
+                motivo                = motivo,
+            )
+
+            # ── 5. Procesar ENTRADAS: sube stock (productos devueltos por cliente) ──
+            for p in items_devueltos_enriquecidos:
+                prod = p['obj_producto']
+
+                prod.stock += p['cantidad']
+                prod.save()
+
+                talla_reg = ProductoTalla.objects.filter(
+                    id_producto=prod, talla=p['talla']
+                ).first()
+                if talla_reg:
+                    talla_reg.cantidad += p['cantidad']
+                    talla_reg.save()
+
+                CambioDetallesEntrada.objects.create(
+                    id_cambio      = cambio,
+                    id_producto_id = p['id_producto'],
+                    talla          = p['talla'],
+                    cantidad       = p['cantidad'],
+                    precio_pactado = p['precio_unitario'],
+                )
+
+            # ── 6. Procesar SALIDAS: baja stock (productos nuevos al cliente) ──
+            for p in items_nuevos_enriquecidos:
+                prod = p['obj_producto']
+
+                talla_reg = ProductoTalla.objects.filter(
+                    id_producto=prod, talla=p['talla']
+                ).first()
+                talla_reg.cantidad -= p['cantidad']
                 talla_reg.save()
 
-            CambioDetallesEntrada.objects.create(
-                id_cambio     = cambio,
-                id_producto_id= p['id_producto'],
-                talla         = p['talla'],
-                cantidad      = p['cantidad'],
-                precio_pactado= p['precio_unitario'],
-            )
+                prod.stock -= p['cantidad']
+                prod.save()
 
-        # ── 6. Procesar SALIDAS: baja stock ──
-        for p in items_nuevos_enriquecidos:
-            prod = p['obj_producto']
+                CambioDetallesSalida.objects.create(
+                    id_cambio      = cambio,
+                    id_producto_id = p['id_producto'],
+                    talla          = p['talla'],
+                    cantidad       = p['cantidad'],
+                    precio_venta   = p['precio_unitario'],
+                )
 
-            talla_reg = ProductoTalla.objects.filter(
-                id_producto=prod, talla=p['talla']
-            ).first()
-            talla_reg.cantidad -= p['cantidad']
-            talla_reg.save()
+            # ── 7. Ajuste financiero automático ──
+            if id_venta and diferencia != 0:
+                venta = Ventas.objects.get(id_venta=id_venta)
+                # Si diferencia > 0: cliente pagó más, ingresa más a la venta
+                # Si diferencia < 0: tienda debe saldo, se ajusta la venta
+                venta.total = float(venta.total) + diferencia
+                if venta.total < 0:
+                    venta.total = 0
+                venta.save()
 
-            prod.stock -= p['cantidad']
-            prod.save()
+            if id_credito:
+                credito = Creditos.objects.get(id_credito=id_credito)
+                if diferencia > 0:
+                    credito.saldo_pendiente = float(credito.saldo_pendiente) + diferencia
+                elif diferencia < 0:
+                    credito.saldo_pendiente = max(0, float(credito.saldo_pendiente) + diferencia)
+                credito.save()
 
-            CambioDetallesSalida.objects.create(
-                id_cambio     = cambio,
-                id_producto_id= p['id_producto'],
-                talla         = p['talla'],
-                cantidad      = p['cantidad'],
-                precio_venta  = p['precio_unitario'],
-            )
+            return Response({
+                'message':          '¡Cambio registrado exitosamente!',
+                'id_cambio':        cambio.id_cambio,
+                'total_devolucion': total_devolucion,
+                'total_nuevo':      total_nuevo,
+                'diferencia':       diferencia,
+                'excedente':        excedente,       # cliente paga a tienda
+                'saldo_favor':      saldo_favor,     # tienda devuelve a cliente
+            }, status=status.HTTP_201_CREATED)
 
-        # ── 7. Ajuste financiero automático ──
-        if id_venta and diferencia > 0:
-            venta = Ventas.objects.get(id_venta=id_venta)
-            venta.total = float(venta.total) + diferencia
-            venta.save()
-
-        if id_credito:
-            credito = Creditos.objects.get(id_credito=id_credito)
-            if diferencia > 0:
-                credito.saldo_pendiente = float(credito.saldo_pendiente) + diferencia
-            elif diferencia < 0:
-                credito.saldo_pendiente = max(0, float(credito.saldo_pendiente) + diferencia)
-            credito.save()
-
-        return Response({
-            'message':          '¡Cambio registrado exitosamente!',
-            'id_cambio':        cambio.id_cambio,
-            'total_devolucion': total_devolucion,
-            'total_nuevo':      total_nuevo,
-            'diferencia':       diferencia,
-        }, status=status.HTTP_201_CREATED)
-
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
