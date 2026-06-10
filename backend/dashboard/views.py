@@ -7,7 +7,7 @@ from django.db.models.functions import TruncDay
 from datetime import timedelta, datetime, date as date_type
 
 from clientes.models import Clientes
-from productos.models import Productos
+from productos.models import Productos , ProductoTalla
 from proveedores.models import Proveedores
 from compras.models import Compras
 from creditos.models import Creditos
@@ -53,7 +53,31 @@ def resumen_dashboard(request):
     total_recaudado_mes = float(Pagos.objects.filter(fecha_pago__gte=inicio_mes).aggregate(total_monto=Sum('monto'))['total_monto'] or 0)
     total_compras_mes   = float(Compras.objects.filter(fecha_compra__gte=inicio_mes).aggregate(total_compras=Sum('total'))['total_compras'] or 0)
 
-    productos_stock_bajo = Productos.objects.filter(stock__lt=5).values('nombre', 'stock').order_by('stock')[:5]
+   # DESPUÉS — revisa tallas individualmente
+
+
+    productos_stock_bajo = []
+    productos_con_tallas = Productos.objects.filter(
+        activo=True
+    ).prefetch_related('tallas')
+
+    for p in productos_con_tallas:
+        tallas_criticas = [
+            t for t in p.tallas.all() if t.cantidad < 5
+        ]
+        if tallas_criticas:
+            tallas_info = ', '.join(
+                f'{t.talla}({t.cantidad})' for t in tallas_criticas
+            )
+            productos_stock_bajo.append({
+                'nombre': p.nombre,
+                'stock':  p.stock,
+                'tallas_criticas': tallas_info,
+            })
+
+    # Ordena por los que tienen más tallas críticas primero
+    productos_stock_bajo.sort(key=lambda x: x['stock'])
+    productos_stock_bajo = productos_stock_bajo[:5]
 
     ultimas_compras = []
     for c in Compras.objects.select_related('id_proveedor').order_by('-fecha_compra')[:5]:

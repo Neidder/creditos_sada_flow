@@ -147,21 +147,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
             return Response({'mensaje': f'Producto "{producto.nombre}" reactivado correctamente'})
         except Productos.DoesNotExist:
             return Response({'error': 'Producto no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-
-
-class KardexViewSet(viewsets.ModelViewSet):
-    queryset = Kardex.objects.all().order_by('-fecha_movimiento')
-    serializer_class = KardexSerializer
-
-    @action(detail=False, methods=['get'], url_path='producto/(?P<id_producto>[^/.]+)')
-    def por_producto(self, request, id_producto=None):
-        kardex = Kardex.objects.filter(
-            id_producto=id_producto
-        ).order_by('-fecha_movimiento')
-        serializer = self.get_serializer(kardex, many=True)
-        return Response(serializer.data)
-    
-    
+        
     @action(detail=False, methods=['get'], url_path='alertas_stock')
     def alertas_stock(self, request):
         LIMITE = 5  # menos de 5 unidades por talla = alerta
@@ -198,3 +184,19 @@ class KardexViewSet(viewsets.ModelViewSet):
             'stock_bajo':     sum(1 for a in alertas if a['nivel'] == 'bajo'),
             'productos':      alertas,
         })
+
+
+class KardexViewSet(viewsets.ModelViewSet):
+    queryset = Kardex.objects.all().order_by('-fecha_movimiento')
+    serializer_class = KardexSerializer
+
+    @action(detail=False, methods=['get'], url_path='producto/(?P<id_producto>[^/.]+)')
+    def por_producto(self, request, id_producto=None):
+        kardex = Kardex.objects.filter(
+            id_producto=id_producto
+        ).order_by('-fecha_movimiento')
+        serializer = self.get_serializer(kardex, many=True)
+        return Response(serializer.data)
+    
+    
+    
