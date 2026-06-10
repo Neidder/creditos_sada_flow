@@ -12,6 +12,7 @@ import Cambios from './pages/Cambios';
 import Ventas from './pages/Ventas';
 import Usuarios from './pages/Usuarios'; // 1. Importamos la nueva página de Usuarios
 import ProtectedRoute from './components/ProtectedRoute';
+import Kardex from './pages/Kardex';
 
 
 function App() {
@@ -50,6 +51,9 @@ function App() {
 
                 <Route path="/caja" element={
                     <ProtectedRoute allowedRoles={[1, 2]}><CajaDiaria /></ProtectedRoute>
+                } />
+                <Route path="/kardex" element={
+                    <ProtectedRoute allowedRoles={[1, 2]}><Kardex /></ProtectedRoute>
                 } />
 
 

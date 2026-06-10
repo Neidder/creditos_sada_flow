@@ -38,3 +38,25 @@ export const getAlertasStock = async () => {
     const response = await api.get('/productos/productos/alertas_stock/');
     return response.data;
 };
+
+export const getKardexProducto = async (id_producto) => {
+    const response = await api.get(`/productos/kardex/producto/${id_producto}/`);
+    return response.data;
+};
+
+export const getProductosConKardex = async () => {
+    const [productos, kardex] = await Promise.all([
+        getProductos(),
+        api.get('/productos/kardex/').then(r => r.data),
+    ]);
+    // Cuenta movimientos por producto
+    const conteo = {};
+    kardex.forEach(k => {
+        const id = k.id_producto;
+        conteo[id] = (conteo[id] || 0) + 1;
+    });
+    return productos.map(p => ({
+        ...p,
+        total_movimientos: conteo[p.id_producto] || 0,
+    }));
+};

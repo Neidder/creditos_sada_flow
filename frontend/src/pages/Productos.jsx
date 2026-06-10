@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import {
   getProductos, crearProducto,
   actualizarProducto, eliminarProducto
 } from '../api/productos';
 import { useAlertasStock } from '../hooks/useAlertasStock';
+
 
 // ──────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -132,6 +134,7 @@ const Productos = () => {
   const [tallas, setTallas] = useState(tallasIniciales('ropa'));
   const [tipoTalla, setTipoTalla] = useState('ropa');
   const [expandido, setExpandido] = useState(null);
+  const navigate = useNavigate();
 
   // Datos de alertas
   const alertasData = useAlertasStock();
@@ -593,6 +596,12 @@ const Productos = () => {
                     </div>
 
                     <div style={styles.productoAcciones}>
+                      <button
+                              onClick={() => navigate('/kardex')}   // ← nuevo
+                              style={styles.botonKardex}
+                          >
+                              📊 Kardex
+                          </button>
                       <button
                         onClick={() => setExpandido(expandido === p.id_producto ? null : p.id_producto)}
                         style={styles.botonVerTallas}

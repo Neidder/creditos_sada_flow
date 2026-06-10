@@ -20,6 +20,7 @@ const Sidebar = () => {
         { path: '/dashboard',  icon: '🏠', label: 'Dashboard',   rolesPermitidos: [1, 2] },
         { path: '/productos',  icon: '📦', label: 'Productos',    rolesPermitidos: [1, 2], alerta: totalAlertas },
         { path: '/clientes',   icon: '👥', label: 'Clientes',     rolesPermitidos: [1, 2] },
+        { path: '/kardex',     icon: '📊', label: 'Kardex', rolesPermitidos: [1, 2] },
         { path: '/proveedores',icon: '🏭', label: 'Proveedores',  rolesPermitidos: [1] },
         { path: '/compras',    icon: '🛒', label: 'Compras',      rolesPermitidos: [1] },
         { path: '/caja',       icon: '🧾', label: 'Caja diaria',  rolesPermitidos: [1, 2] },
