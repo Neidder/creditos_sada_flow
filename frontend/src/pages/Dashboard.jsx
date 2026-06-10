@@ -276,29 +276,36 @@ const Dashboard = () => {
                 {/* Fila inferior */}
                 <div style={styles.tablasFila}>
                     {/* Stock bajo */}
-                    <div style={styles.tablaCard}>
-                        <p style={styles.tablaTitulo}>⚠️ Productos con stock bajo</p>
-                        {data.productos_stock_bajo.length === 0 ? (
-                            <p style={{ ...styles.sinDatos, color: '#2e7d52' }}>
-                                ✅ Todos los productos tienen buen stock
+<div style={styles.tablaCard}>
+    <p style={styles.tablaTitulo}>⚠️ Productos con stock bajo</p>
+    {data.productos_stock_bajo.length === 0 ? (
+        <p style={{ ...styles.sinDatos, color: '#2e7d52' }}>
+            ✅ Todas las tallas tienen buen stock
+        </p>
+    ) : (
+        <div style={styles.stockLista}>
+            {data.productos_stock_bajo.map((p, i) => (
+                <div key={i} style={styles.stockItem}>
+                    <div>
+                        <span style={styles.stockNombre}>👕 {p.nombre}</span>
+                        {p.tallas_criticas && (
+                            <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#e65100' }}>
+                                Tallas: {p.tallas_criticas}
                             </p>
-                        ) : (
-                            <div style={styles.stockLista}>
-                                {data.productos_stock_bajo.map((p, i) => (
-                                    <div key={i} style={styles.stockItem}>
-                                        <span style={styles.stockNombre}>👕 {p.nombre}</span>
-                                        <span style={{
-                                            ...styles.stockBadge,
-                                            backgroundColor: p.stock === 0 ? '#fdecea' : '#fff3e0',
-                                            color: p.stock === 0 ? '#e53935' : '#e65100',
-                                        }}>
-                                            {p.stock === 0 ? '🚨 Sin stock' : `⚠️ ${p.stock} uds`}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
                         )}
                     </div>
+                    <span style={{
+                        ...styles.stockBadge,
+                        backgroundColor: p.stock === 0 ? '#fdecea' : '#fff3e0',
+                        color: p.stock === 0 ? '#e53935' : '#e65100',
+                    }}>
+                        {p.stock === 0 ? '🚨 Sin stock' : `⚠️ ${p.stock} uds`}
+                    </span>
+                </div>
+            ))}
+        </div>
+    )}
+</div>
 
                     {/* Pagos por método */}
                     <div style={styles.tablaCard}>

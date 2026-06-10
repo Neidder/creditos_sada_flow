@@ -18,16 +18,18 @@ const Sidebar = () => {
 
     const menuItems = [
         { path: '/dashboard',  icon: '🏠', label: 'Dashboard',   rolesPermitidos: [1, 2] },
-        { path: '/productos',  icon: '📦', label: 'Productos',    rolesPermitidos: [1, 2], alerta: totalAlertas },
-        { path: '/clientes',   icon: '👥', label: 'Clientes',     rolesPermitidos: [1, 2] },
-        { path: '/kardex',     icon: '📊', label: 'Kardex', rolesPermitidos: [1, 2] },
-        { path: '/proveedores',icon: '🏭', label: 'Proveedores',  rolesPermitidos: [1] },
-        { path: '/compras',    icon: '🛒', label: 'Compras',      rolesPermitidos: [1] },
-        { path: '/caja',       icon: '🧾', label: 'Caja diaria',  rolesPermitidos: [1, 2] },
+        
+        
         { path: '/ventas',     icon: '💵', label: 'Ventas',       rolesPermitidos: [1, 2] },
+        { path: '/productos',  icon: '📦', label: 'Productos',    rolesPermitidos: [1, 2], alerta: totalAlertas },
+        { path: '/caja',       icon: '🧾', label: 'Caja diaria',  rolesPermitidos: [1, 2] },
         { path: '/creditos',   icon: '📋', label: 'Créditos',     rolesPermitidos: [1, 2] },
         { path: '/pagos',      icon: '💰', label: 'Pagos',        rolesPermitidos: [1, 2] },
         { path: '/cambios',    icon: '🔄', label: 'Cambios',      rolesPermitidos: [1, 2] },
+        { path: '/kardex',     icon: '📊', label: 'Kardex', rolesPermitidos: [1, 2] },
+        { path: '/compras',    icon: '🛒', label: 'Compras',      rolesPermitidos: [1] },
+        { path: '/proveedores',icon: '🏭', label: 'Proveedores',  rolesPermitidos: [1] },
+        { path: '/clientes',   icon: '👥', label: 'Clientes',     rolesPermitidos: [1, 2] },
         { path: '/usuarios',   icon: '⚙️', label: 'Usuarios',     rolesPermitidos: [1] },
     ];
 
